@@ -1,12 +1,13 @@
 import cv2
 import numpy as np
 from pathlib import Path
+import json
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DETECTOR_MODEL = str(BASE_DIR / "models" / "face_detection_yunet_2026may.onnx")
 RECOGNIZER_MODEL = str(BASE_DIR / "models" / "face_recognition_sface_2021dec.onnx")
-
+DB_PATH = BASE_DIR / "database" / "face_db.json"
 
 class FaceEngine:
     def __init__(self):
@@ -90,3 +91,56 @@ class FaceEngine:
             "similarity": similarity,
             "match": similarity >= 0.70
         }
+    
+    def load_database(self):
+        if not DB_PATH.exists():
+            return {}
+
+        with open(DB_PATH, "r") as f:
+            return json.load(f)
+        
+    def save_database(self, db):
+        with open(DB_PATH, "w") as f:
+            json.dump(db, f, indent=4)
+
+    def enroll_face(self, person_id: str, image_path: str):
+        embedding = self.get_embedding(image_path)
+
+        db = self.load_database()
+        db[person_id] = embedding.tolist()
+        self.save_database(db)
+
+        return {
+            "status": "enrolled",
+            "person_id": person_id
+        }
+
+    def verify_face(self, image_path: str, threshold: float = 0.70):
+        query_embedding = self.get_embedding(image_path)
+
+        db = self.load_database()
+
+        if not db:
+            return {
+                "match": False,
+                "message": "No enrolled faces found"
+            }
+
+        best_person_id = None
+        best_similarity = -1.0
+
+        for person_id, stored_embedding in db.items():
+            stored_embedding = np.array(stored_embedding, dtype=np.float32)
+
+            similarity = float(np.dot(query_embedding, stored_embedding))
+
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_person_id = person_id
+
+        return {
+            "match": best_similarity >= threshold,
+            "person_id": best_person_id if best_similarity >= threshold else None,
+            "best_similarity": best_similarity,
+            "threshold": threshold
+        }   
