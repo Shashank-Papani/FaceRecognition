@@ -43,12 +43,14 @@ class FaceEngine:
         h, w = resized.shape[:2]    
         self.detector.setInputSize((w, h))
 
-        retval, faces = self.detector.detect(resized)
+        _, faces = self.detector.detect(resized)
 
         if faces is None or len(faces) == 0:
-            return None
+            raise ValueError("No face detected. Please upload a clear front-facing image.")
+        
+        if len(faces) > 1:
+            raise ValueError("Multiple faces detected. Please upload an image with only one face.")
 
-        faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
         face = faces[0].copy()
 
         # Scale face coordinates back to original image size
@@ -133,9 +135,12 @@ class FaceEngine:
                 best_similarity = similarity
                 best_person_id = person_id
 
+        is_match = best_similarity >= threshold
+
         return {
-            "match": best_similarity >= threshold,
+            "verified": is_match,
             "person_id": best_person_id if best_similarity >= threshold else None,
-            "best_similarity": best_similarity,
-            "threshold": threshold
+            "similarity": best_similarity,
+            "threshold": threshold,
+            "message": "Face verified successfully" if is_match else "No matching face found"
         }   
