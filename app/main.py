@@ -55,3 +55,30 @@ def verify_face(
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+@app.get("/people")
+def list_people():
+    db = engine.load_database()
+
+    people = []
+
+    for person_id, record in db.items():
+        people.append({
+            "person_id": person_id,
+            "embedding_count": len(record.get("embeddings", [])),
+            "model_version": record.get("embedding_model_version")
+        })
+
+    return {
+        "count": len(people),
+        "people": people
+    }
+
+@app.delete("/people/{person_id}")
+def delete_person(person_id: str):
+    result = engine.delete_person(person_id)
+
+    if not result["deleted"]:
+        raise HTTPException(status_code=404, detail=result["message"])
+    
+    return result
