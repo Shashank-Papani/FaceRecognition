@@ -161,6 +161,20 @@ class FaceEngine:
                 "embedding_model_version": EMBEDDING_MODEL_VERSION
             }
         
+        # Prevent duplicate or near-duplicate enrollment images
+        for existing_record in db[person_id]["embeddings"]:
+            existing_embedding = np.array(existing_record["embedding"], dtype=np.float32)
+            similarity = float(np.dot(embedding, existing_embedding))
+
+            if similarity >= 0.95:
+                return {
+                    "status": "duplicate",
+                    "person_id": person_id,
+                    "message": "This face image is already very similar to an enrolled image.",
+                    "similarity": similarity,
+                    "embedding_count": len(db[person_id]["embeddings"])
+                }
+            
         db[person_id]["embeddings"].append(new_embedding_record)
 
         self.save_database(db)
@@ -236,3 +250,4 @@ class FaceEngine:
             "blur_score": float(blur_score),
             "threshold": threshold
         }
+    
