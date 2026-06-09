@@ -60,18 +60,13 @@ class FaceEngine:
     def get_embedding(self, image_path: str):
         image = cv2.imread(image_path)
 
-        print("Reading:", image_path)
-        print("Image loaded:", image is not None)
-        if image is not None:
-            print("Image shape:", image.shape)
-
         if image is None:
             raise ValueError(f"Could not read image: {image_path}")
 
         face = self.detect_largest_face(image)
 
         if face is None:
-            raise ValueError("No face detected")
+            raise ValueError("No face detected. Please upload a clear front-facing image.")
 
         aligned_face = self.recognizer.alignCrop(image, face)
         embedding = self.recognizer.feature(aligned_face)

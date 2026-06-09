@@ -1,18 +1,57 @@
+import shutil
+from pathlib import Path
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from app.face_engine import FaceEngine
 
+app = FastAPI(title="Face Recognition API")
 engine = FaceEngine()
 
-enroll_result = engine.enroll_face(
-    "person_001",
-    "test_images/person1.jpg"
-)
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
-print("Enroll result:")
-print(enroll_result)
+@app.get("/")
+def home():
+    return {
+        "status": "running",
+        "message": "Face Recognition API is working"
+    }
 
-verify_result = engine.verify_face(
-    "test_images/person2.jpg"
-)
+@app.post("/enroll")
+def enroll_face(
+    person_id: str = Form(...),
+    image: UploadFile = File(...)
+):
+    try:
+        image_path = UPLOAD_DIR / image.filename
 
-print("Verify result:")
-print(verify_result)
+        with image_path.open("wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+
+        result = engine.enroll_face(
+            person_id=person_id,
+            image_path=str(image_path)
+        )
+        return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+@app.post("/verify")
+def verify_face(
+    image: UploadFile = File(...),
+    threshold: float = Form(0.70)
+):
+    try:
+        image_path = UPLOAD_DIR / image.filename
+
+        with image_path.open("wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+
+        result = engine.verify_face(
+            image_path=str(image_path),
+            threshold=threshold
+        )
+        return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

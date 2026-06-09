@@ -14,3 +14,9 @@ Add two images of yourself and other one of you and other in test_images and run
     
     **Make sure the images you add are jpg and if there's any errors
     ** If you get error: frozen runpy, result = engine.compare_faces change score_threshold to lower for the start in face_engine.py
+
+To run API endpoints:
+    run, uvicorn app.main:app --reload
+
+for API endpoint checks, use swagger
+    http://127.0.0.1:8000/docs
