@@ -7,7 +7,8 @@ from app.face_repository import (
     get_all_embeddings,
     list_people as repo_list_people,
     delete_person as repo_delete_person,
-    log_verification
+    log_verification,
+    find_best_match
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -175,9 +176,9 @@ class FaceEngine:
     def verify_face(self, image_path: str, threshold: float = 0.70):
         query_embedding = self.get_embedding(image_path)
 
-        records = get_all_embeddings()
+        best_match = find_best_match(query_embedding.tolist())
 
-        if not records:
+        if best_match is None:
             log_verification(
                 matched_person_id=None,
                 similarity=None,
@@ -195,21 +196,8 @@ class FaceEngine:
                 "message": "No enrolled faces found"
             }
         
-        best_person_id = None
-        best_similarity = -1.0
-
-        for record in records:
-            stored_embedding_text = record["embedding"]
-            stored_embedding = np.array(
-                [float(x) for x in stored_embedding_text.strip("[]").split(",")],
-                dtype=np.float32
-            )
-            
-            similarity = float(np.dot(query_embedding, stored_embedding))
-
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_person_id = record["person_id"]
+        best_person_id = best_match["person_id"]
+        best_similarity = float(best_match["similarity"])
 
         is_match = best_similarity >= threshold
         matched_person_id = best_person_id if is_match else None

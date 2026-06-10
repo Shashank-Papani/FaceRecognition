@@ -143,3 +143,27 @@ def log_verification(
             }
         )
         db.commit()
+
+
+def find_best_match(query_embedding: list[float]):
+    embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+    with SessionLocal() as db:
+        result = db.execute(
+            text("""
+                SELECT
+                    id,
+                    person_id,
+                    1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity,
+                    quality,
+                    created_at
+                FROM face_embeddings
+                ORDER BY embedding <=> CAST(:query_embedding AS vector)
+                LIMIT 1
+            """),
+            {
+                "query_embedding": embedding_str
+            }
+        )
+
+        return result.mappings().first()
