@@ -20,3 +20,46 @@ To run API endpoints:
 
 for API endpoint checks, use swagger
     http://127.0.0.1:8000/docs
+
+To setup pgvector I used psql docker with command
+    docker run --name face-postgres `
+        -e POSTGRES_USER=postgres `
+        -e POSTGRES_PASSWORD=postgres `
+        -e POSTGRES_DB=face_recognition `
+        -p 5432:5432 `
+        -d pgvector/pgvector:pg17
+
+To open Postgres shell for SQL code:
+    docker exec -it face-postgres psql -U postgres -d face_recognition
+
+    CREATE EXTENSION IF NOT EXISTS vector;
+
+    CREATE TABLE IF NOT EXISTS people (
+        id BIGSERIAL PRIMARY KEY,
+        person_id TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS face_embeddings (
+        id BIGSERIAL PRIMARY KEY,
+        person_id TEXT NOT NULL REFERENCES people(person_id) ON DELETE CASCADE,
+        embedding vector(128) NOT NULL,
+        detector_model TEXT NOT NULL,
+        recognizer_model TEXT NOT NULL,
+        embedding_model_version TEXT NOT NULL,
+        quality JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS verification_logs (
+        id BIGSERIAL PRIMARY KEY,
+        matched_person_id TEXT,
+        similarity FLOAT,
+        threshold FLOAT,
+        verified BOOLEAN,
+        quality JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+Connecting FastAPI app to PostgreSQL:
+    pip install sqlalchemy psycopg2-binary pgvector python-dotenv
