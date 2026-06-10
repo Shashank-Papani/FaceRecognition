@@ -58,21 +58,7 @@ def verify_face(
     
 @app.get("/people")
 def list_people():
-    db = engine.load_database()
-
-    people = []
-
-    for person_id, record in db.items():
-        people.append({
-            "person_id": person_id,
-            "embedding_count": len(record.get("embeddings", [])),
-            "model_version": record.get("embedding_model_version")
-        })
-
-    return {
-        "count": len(people),
-        "people": people
-    }
+    return engine.list_people()
 
 @app.delete("/people/{person_id}")
 def delete_person(person_id: str):

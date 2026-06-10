@@ -63,3 +63,34 @@ To open Postgres shell for SQL code:
 
 Connecting FastAPI app to PostgreSQL:
     pip install sqlalchemy psycopg2-binary pgvector python-dotenv
+
+How to check your DB content
+
+    Open Postgres inside Docker:
+
+        docker exec -it face-postgres psql -U postgres -d face_recognition
+
+    Then run these.
+
+    See all tables
+        \dt
+
+    See all enrolled people
+        SELECT * FROM people;
+
+    See embeddings without printing the huge vector:
+        SELECT
+            id,
+            person_id,
+            detector_model,
+            recognizer_model,
+            embedding_model_version,
+            quality,
+            created_at
+        FROM face_embeddings;
+        Count embeddings per person
+        SELECT
+            person_id,
+            COUNT(*) AS embedding_count
+        FROM face_embeddings
+        GROUP BY person_id;
