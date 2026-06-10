@@ -88,7 +88,8 @@ How to check your DB content
             quality,
             created_at
         FROM face_embeddings;
-        Count embeddings per person
+
+    Count embeddings per person:
         SELECT
             person_id,
             COUNT(*) AS embedding_count
