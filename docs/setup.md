@@ -1,3 +1,10 @@
+Ignore below set up instructions:
+    To run this program download docker and set up
+    Run: docker compose up -d
+
+    To stop
+    Run: docker compose down
+
 clone the repo and activate virtual env
     python -m venv .venv
     .venv\Scripts\activate

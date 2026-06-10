@@ -1,8 +1,10 @@
 # Face Recognition API
 
-A FastAPI-based face detection and face recognition system built with OpenCV YuNet and SFace.
+A Dockerized FastAPI-based face detection and face recognition system built with **OpenCV YuNet**, **OpenCV SFace**, **PostgreSQL**, and **pgvector**.
 
 This project allows users to enroll faces, verify faces against enrolled identities, manage enrolled people, and store multiple embeddings per person. It is designed as a starting point for a SaaS-style face recognition backend.
+
+---
 
 ## Features
 
@@ -12,6 +14,9 @@ This project allows users to enroll faces, verify faces against enrolled identit
 * Enroll a person using face images
 * Store multiple face embeddings per person
 * Verify a new face against enrolled identities
+* Store face embeddings in PostgreSQL
+* Use pgvector for vector similarity search
+* HNSW index for faster embedding search
 * Prevent duplicate or near-duplicate enrollment images
 * Reject images with no face
 * Reject images with multiple faces
@@ -19,8 +24,11 @@ This project allows users to enroll faces, verify faces against enrolled identit
 * Return face quality metadata
 * List enrolled people
 * Delete enrolled people
-* Local JSON database for MVP testing
-* Ready to migrate to PostgreSQL + pgvector
+* Store verification logs
+* Dockerized API and database using Docker Compose
+* Swagger UI for API testing
+
+---
 
 ## Tech Stack
 
@@ -30,8 +38,14 @@ This project allows users to enroll faces, verify faces against enrolled identit
 * NumPy
 * YuNet face detector
 * SFace face recognizer
+* PostgreSQL
+* pgvector
+* SQLAlchemy
 * Uvicorn
-* JSON file storage for local development
+* Docker
+* Docker Compose
+
+---
 
 ## Project Structure
 
@@ -40,25 +54,39 @@ FaceRecognition/
   app/
     __init__.py
     main.py
+    db.py
     face_engine.py
+    face_repository.py
+
+  db/
+    init.sql
+
+  docs/
+    CheckList.md
+    setup.md
+
+  licenses/
 
   models/
     face_detection_yunet_2026may.onnx
     face_recognition_sface_2021dec.onnx
 
-  database/
-    face_db.json
+  tests/
+    __init__.py
+    test_db.py
+    test_repo.py
 
   uploads/
-    uploaded images
 
-  test_images/
-    local test images
-
+  Dockerfile
+  docker-compose.yml
   requirements.txt
   README.md
   .gitignore
+  .dockerignore
 ```
+
+---
 
 ## How It Works
 
@@ -75,14 +103,16 @@ Face Alignment
    ↓
 Embedding generation using SFace
    ↓
-Embedding comparison
+Embedding storage/search using PostgreSQL + pgvector
    ↓
 Verification result
 ```
 
 During enrollment, the system generates an embedding from the uploaded face image and stores it under the provided `person_id`.
 
-During verification, the system generates an embedding from the uploaded image and compares it against all stored embeddings. The closest match is returned if the similarity score is above the threshold.
+During verification, the system generates an embedding from the uploaded image and searches for the closest stored embedding using pgvector cosine similarity.
+
+---
 
 ## Model Details
 
@@ -106,6 +136,14 @@ face_recognition_sface_2021dec.onnx
 
 SFace generates face embeddings that can be compared using cosine similarity.
 
+Current embedding model version:
+
+```text
+sface_v1
+```
+
+---
+
 ## Licensing Notes
 
 The OpenCV YuNet model files are distributed under the MIT License in the official OpenCV Zoo model directory.
@@ -125,101 +163,153 @@ SFACE_LICENSE.txt
 
 Do not remove license or copyright notices from third-party models or libraries.
 
-## Setup Instructions
+---
 
-### 1. Clone the repository
+## Requirements
+
+Before running the project, install:
+
+* Docker Desktop
+* Git
+
+No manual PostgreSQL setup is required. Docker Compose starts both the FastAPI API and PostgreSQL + pgvector database.
+
+---
+
+## Running with Docker
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
 cd YOUR_REPO_NAME
 ```
 
-### 2. Create a virtual environment
-
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-On macOS/Linux:
+Start the API and database:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+docker compose up --build -d
 ```
 
-### 3. Install dependencies
+Check running containers:
 
 ```bash
-pip install -r requirements.txt
+docker ps
 ```
 
-Or install manually:
-
-```bash
-pip install fastapi uvicorn opencv-python numpy python-multipart
-```
-
-### 4. Add model files
-
-Create a `models/` folder and add:
+Expected containers:
 
 ```text
-face_detection_yunet_2026may.onnx
-face_recognition_sface_2021dec.onnx
+face-recognition-api
+face-postgres-db
 ```
 
-These can be downloaded from the official OpenCV Zoo model folders.
-
-### 5. Create local database file
-
-Create the database folder:
-
-```bash
-mkdir database
-```
-
-Create:
+The API runs on:
 
 ```text
-database/face_db.json
+http://127.0.0.1:8080
 ```
 
-Put this inside the file:
+Open Swagger UI:
+
+```text
+http://127.0.0.1:8080/docs
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+Expected response:
 
 ```json
-{}
+{
+  "api": "healthy",
+  "database": {
+    "connected": true,
+    "status": "success",
+    "error": null
+  }
+}
 ```
 
-### 6. Create uploads folder
+---
+
+## Stop the App
 
 ```bash
-mkdir uploads
+docker compose down
 ```
 
-## Running the API
+---
 
-Start the FastAPI server:
+## Rebuild After Code Changes
 
 ```bash
-uvicorn app.main:app --reload
+docker compose up --build -d
 ```
 
-Open the API docs in your browser:
+---
+
+## Docker Services
+
+### API Service
+
+The FastAPI application runs inside the `face-recognition-api` container.
+
+Host URL:
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:8080
 ```
+
+Host-to-container port mapping:
+
+```text
+8080 -> 8000
+```
+
+### Database Service
+
+PostgreSQL with pgvector runs inside the `face-postgres-db` container.
+
+Database name:
+
+```text
+face_recognition
+```
+
+Database user:
+
+```text
+postgres
+```
+
+Host-to-container port mapping:
+
+```text
+5433 -> 5432
+```
+
+The API connects to the database internally using:
+
+```text
+postgresql://postgres:postgres@db:5432/face_recognition
+```
+
+---
 
 ## API Endpoints
 
-### Health Check
+### Root
 
 ```http
 GET /
 ```
+
+Checks whether the API is running.
 
 Example response:
 
@@ -229,6 +319,31 @@ Example response:
   "message": "Face Recognition API is working"
 }
 ```
+
+---
+
+### Health Check
+
+```http
+GET /health
+```
+
+Checks API and database health.
+
+Example response:
+
+```json
+{
+  "api": "healthy",
+  "database": {
+    "connected": true,
+    "status": "success",
+    "error": null
+  }
+}
+```
+
+---
 
 ## Enroll Face
 
@@ -240,18 +355,17 @@ Enrolls a person using an uploaded face image.
 
 ### Form Data
 
-| Field     | Type   | Required | Description              |
-| --------- | ------ | -------- | ------------------------ |
-| person_id | string | Yes      | Unique ID for the person |
-| image     | file   | Yes      | Face image to enroll     |
+| Field       | Type   | Required | Description              |
+| ----------- | ------ | -------- | ------------------------ |
+| `person_id` | string | Yes      | Unique ID for the person |
+| `image`     | file   | Yes      | Face image to enroll     |
 
-### Example response
+### Example Response
 
 ```json
 {
   "status": "enrolled",
   "person_id": "person_001",
-  "embedding_count": 3,
   "model_version": "sface_v1",
   "quality": {
     "face_confidence": 0.91,
@@ -261,7 +375,7 @@ Enrolls a person using an uploaded face image.
 }
 ```
 
-### Duplicate enrollment response
+### Duplicate Enrollment Response
 
 If the same or very similar face image is enrolled again:
 
@@ -270,10 +384,11 @@ If the same or very similar face image is enrolled again:
   "status": "duplicate",
   "person_id": "person_001",
   "message": "This face image is already very similar to an enrolled image.",
-  "similarity": 0.98,
-  "embedding_count": 3
+  "similarity": 0.98
 }
 ```
+
+---
 
 ## Verify Face
 
@@ -281,16 +396,16 @@ If the same or very similar face image is enrolled again:
 POST /verify
 ```
 
-Verifies an uploaded face against all enrolled people.
+Verifies an uploaded face against enrolled people.
 
 ### Form Data
 
-| Field     | Type  | Required | Description                             |
-| --------- | ----- | -------- | --------------------------------------- |
-| image     | file  | Yes      | Face image to verify                    |
-| threshold | float | No       | Similarity threshold, default is `0.70` |
+| Field       | Type  | Required | Description                             |
+| ----------- | ----- | -------- | --------------------------------------- |
+| `image`     | file  | Yes      | Face image to verify                    |
+| `threshold` | float | No       | Similarity threshold, default is `0.70` |
 
-### Example successful response
+### Example Successful Response
 
 ```json
 {
@@ -307,7 +422,7 @@ Verifies an uploaded face against all enrolled people.
 }
 ```
 
-### Example failed response
+### Example Failed Response
 
 ```json
 {
@@ -324,6 +439,8 @@ Verifies an uploaded face against all enrolled people.
 }
 ```
 
+---
+
 ## List Enrolled People
 
 ```http
@@ -332,7 +449,7 @@ GET /people
 
 Returns all enrolled people and their embedding counts.
 
-### Example response
+### Example Response
 
 ```json
 {
@@ -352,6 +469,8 @@ Returns all enrolled people and their embedding counts.
 }
 ```
 
+---
+
 ## Delete Person
 
 ```http
@@ -360,7 +479,7 @@ DELETE /people/{person_id}
 
 Deletes a person and all their stored embeddings.
 
-### Example response
+### Example Response
 
 ```json
 {
@@ -370,19 +489,23 @@ Deletes a person and all their stored embeddings.
 }
 ```
 
+---
+
 ## Face Validation Rules
 
 The system currently applies these validation rules:
 
 ```text
-0 faces detected      → reject
-1 valid face detected → continue
-2+ faces detected     → reject
-low confidence face   → reject
-tiny face             → reject
+0 faces detected      -> reject
+1 valid face detected -> continue
+2+ faces detected     -> reject
+low confidence face   -> reject
+tiny face             -> reject
 ```
 
 This is important for SaaS and attendance-style systems because the API should not accidentally verify the wrong person in a group image.
+
+---
 
 ## Similarity Threshold
 
@@ -391,8 +514,8 @@ The verification threshold controls how strict the match is.
 Example:
 
 ```text
-similarity >= threshold → verified
-similarity < threshold  → not verified
+similarity >= threshold -> verified
+similarity < threshold  -> not verified
 ```
 
 The default threshold is:
@@ -415,32 +538,124 @@ different person / similar-looking person
 different person / random person
 ```
 
-## Current Database Format
+---
 
-The local JSON database stores multiple embeddings per person.
+## Database
 
-Example:
+The project uses PostgreSQL with pgvector.
 
-```json
-{
-  "person_001": {
-    "embeddings": [
-      {
-        "embedding": [0.01, -0.04, 0.22],
-        "quality": {
-          "face_confidence": 0.91,
-          "face_width": 220.0,
-          "face_height": 220.0
-        },
-        "created_at": "2026-06-08T12:30:00"
-      }
-    ],
-    "detector_model": "face_detection_yunet_2026may.onnx",
-    "recognizer_model": "face_recognition_sface_2021dec.onnx",
-    "embedding_model_version": "sface_v1"
-  }
-}
+The database is initialized automatically from:
+
+```text
+db/init.sql
 ```
+
+It creates:
+
+```text
+people
+face_embeddings
+verification_logs
+```
+
+### people
+
+Stores enrolled identities.
+
+```text
+id
+person_id
+created_at
+```
+
+### face_embeddings
+
+Stores face embeddings for each enrolled person.
+
+```text
+id
+person_id
+embedding
+detector_model
+recognizer_model
+embedding_model_version
+quality
+created_at
+```
+
+### verification_logs
+
+Stores verification attempts.
+
+```text
+id
+matched_person_id
+similarity
+threshold
+verified
+quality
+created_at
+```
+
+The vector index is created automatically:
+
+```sql
+CREATE INDEX IF NOT EXISTS face_embeddings_embedding_hnsw_idx
+ON face_embeddings
+USING hnsw (embedding vector_cosine_ops);
+```
+
+---
+
+## Useful Database Commands
+
+Open PostgreSQL inside Docker:
+
+```bash
+docker exec -it face-postgres-db psql -U postgres -d face_recognition
+```
+
+Show tables:
+
+```sql
+\dt
+```
+
+Show enrolled people:
+
+```sql
+SELECT * FROM people;
+```
+
+Show embeddings:
+
+```sql
+SELECT
+    id,
+    person_id,
+    detector_model,
+    recognizer_model,
+    embedding_model_version,
+    quality,
+    created_at
+FROM face_embeddings;
+```
+
+Show verification logs:
+
+```sql
+SELECT
+    id,
+    matched_person_id,
+    similarity,
+    threshold,
+    verified,
+    created_at
+FROM verification_logs
+ORDER BY created_at DESC;
+```
+
+---
 
 ## Important Security Notes
 
@@ -452,12 +667,15 @@ Add these to `.gitignore`:
 .venv/
 __pycache__/
 *.pyc
-
-uploads/
-test_images/
-database/face_db.json
+.pytest_cache/
 
 .env
+
+uploads/*
+!uploads/.gitkeep
+
+test_images/
+db/face_db.json
 ```
 
 Face embeddings are biometric data. Treat them as sensitive information.
@@ -467,6 +685,7 @@ For production, add:
 ```text
 authentication
 authorization
+organization / tenant separation
 encryption at rest
 secure database access
 audit logs
@@ -475,77 +694,46 @@ liveness detection
 consent and privacy policy
 ```
 
+---
+
 ## Limitations
 
 This is an MVP, not a full production biometric system.
 
 Current limitations:
 
-* Uses local JSON storage
 * No authentication
 * No user roles
+* No tenant or organization separation
 * No liveness detection
-* No database encryption
-* No audit logging
-* No production-grade threshold tuning
-* No PostgreSQL/pgvector integration yet
 * No face anti-spoofing
+* No database encryption
+* No rate limiting
+* No production-grade threshold tuning
 * No model monitoring
+* Uploaded images are currently saved locally
+
+---
 
 ## Roadmap
 
 Planned improvements:
 
-* Move from JSON to PostgreSQL
-* Add pgvector for embedding search
-* Add verification logs
+* Add API key authentication
+* Add organization / tenant support
+* Delete uploaded images after embedding extraction
+* Add structured API error responses
+* Add request logging and latency tracking
 * Add liveness detection
-* Add API authentication
 * Add rate limiting
-* Add model version migration support
-* Add Docker setup
-* Add unit tests
+* Add cloud deployment
+* Add unit and integration tests
 * Add confidence/quality dashboard
 * Add `/detect` endpoint for detecting all faces
 * Add annotated image output with bounding boxes and landmarks
+* Add admin dashboard
 
-## Future Database Design
-
-For production, the project should move to PostgreSQL with pgvector.
-
-Suggested tables:
-
-```text
-people
-face_embeddings
-verification_logs
-```
-
-Example:
-
-```text
-people
-- id
-- person_id
-- created_at
-
-face_embeddings
-- id
-- person_id
-- embedding
-- model_version
-- quality
-- created_at
-
-verification_logs
-- id
-- uploaded_image_id
-- matched_person_id
-- similarity
-- threshold
-- verified
-- created_at
-```
+---
 
 ## Development Status
 
@@ -561,15 +749,24 @@ Current status:
 ✅ People list endpoint
 ✅ Delete person endpoint
 ✅ Basic quality metadata
-✅ Local JSON database
+✅ PostgreSQL database
+✅ pgvector similarity search
+✅ HNSW vector index
+✅ Verification logs
+✅ Dockerized FastAPI app
+✅ Dockerized PostgreSQL + pgvector database
 ```
 
 Next major step:
 
 ```text
-PostgreSQL + pgvector migration
+API authentication and SaaS-style tenant support
 ```
+
+---
 
 ## Disclaimer
 
-This project is for development and research purposes. If used in production, especially for attendance, access control, or identity verification, proper privacy, security, compliance, consent, and liveness detection measures must be added.
+This project is for development and research purposes.
+
+If used in production, especially for attendance, access control, or identity verification, proper privacy, security, compliance, consent, and liveness detection measures must be added.
