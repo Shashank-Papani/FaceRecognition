@@ -40,6 +40,10 @@ class FaceEngine:
             ""
         )
 
+    def database_health_check(self):
+        from app.face_repository import database_health_check
+        return database_health_check()
+
     def detect_single_face(self, image):
         original_h, original_w = image.shape[:2]
 
@@ -259,4 +263,5 @@ class FaceEngine:
             "blur_score": float(blur_score),
             "threshold": threshold
         }
+    
     
