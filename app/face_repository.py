@@ -2,7 +2,24 @@ import json
 from sqlalchemy import text
 from app.db import SessionLocal
 
+def database_health_check():
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
 
+        return {
+            "connected": "True",
+            "status": "success",
+            "error": None
+        }
+    
+    except Exception as e:
+        return {
+            "connected": "False",
+            "status": "failed",
+            "error": str(e)
+        }
+    
 def create_person_if_not_exists(person_id: str):
     with SessionLocal() as db:
         db.execute(

@@ -16,6 +16,15 @@ def home():
         "message": "Face Recognition API is working"
     }
 
+@app.get("/health")
+def health_check():
+    db_status = engine.database_health_check()
+
+    return {
+        "api": "healthy" if db_status["connected"] else "unhealthy",
+        "database": db_status
+    }
+
 @app.post("/enroll")
 def enroll_face(
     person_id: str = Form(...),
