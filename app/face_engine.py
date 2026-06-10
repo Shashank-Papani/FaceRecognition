@@ -1,14 +1,19 @@
 import cv2
 import numpy as np
 from pathlib import Path
-import json
-from datetime import datetime
+
+from app.face_repository import (
+    save_face_embedding,
+    get_all_embeddings,
+    list_people as repo_list_people,
+    delete_person as repo_delete_person,
+    log_verification
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DETECTOR_MODEL = str(BASE_DIR / "models" / "face_detection_yunet_2026may.onnx")
 RECOGNIZER_MODEL = str(BASE_DIR / "models" / "face_recognition_sface_2021dec.onnx")
-DB_PATH = BASE_DIR / "database" / "face_db.json"
 
 DETECTOR_MODEL_NAME = "face_detection_yunet_2026may.onnx"
 RECOGNIZER_MODEL_NAME = "face_recognition_sface_2021dec.onnx"
@@ -125,64 +130,44 @@ class FaceEngine:
             "similarity": similarity,
             "match": similarity >= 0.70
         }
-    
-    def load_database(self):
-        if not DB_PATH.exists():
-            return {}
-
-        with open(DB_PATH, "r") as f:
-            content = f.read().strip()
-
-            if not content:
-                return {}
-
-            return json.loads(content)
-        
-    def save_database(self, db):
-        with open(DB_PATH, "w") as f:
-            json.dump(db, f, indent=4)
 
     def enroll_face(self, person_id: str, image_path: str):
         embedding = self.get_embedding(image_path)
 
-        db = self.load_database()
+        existing_records = get_all_embeddings()
 
-        new_embedding_record = {
-            "embedding": embedding.tolist(),
-            "quality": self.last_face_quality,
-            "created_at": datetime.utcnow().isoformat()
-        }
+        for record in existing_records:
+            if record["person_id"] != person_id:
+                continue
 
-        if person_id not in db:
-            db[person_id] = {
-                "embeddings": [],
-                "detector_model": DETECTOR_MODEL_NAME,
-                "recognizer_model": RECOGNIZER_MODEL_NAME,
-                "embedding_model_version": EMBEDDING_MODEL_VERSION
-            }
-        
-        # Prevent duplicate or near-duplicate enrollment images
-        for existing_record in db[person_id]["embeddings"]:
-            existing_embedding = np.array(existing_record["embedding"], dtype=np.float32)
-            similarity = float(np.dot(embedding, existing_embedding))
+            stored_embedding_text = record["embedding"]
+            stored_embedding = np.array(
+                [float(x) for x in stored_embedding_text.strip("[]").split(",")],
+                dtype=np.float32
+            )
+
+            similarity = float(np.dot(embedding, stored_embedding))
 
             if similarity >= 0.95:
                 return {
                     "status": "duplicate",
                     "person_id": person_id,
                     "message": "This face image is already very similar to an enrolled image.",
-                    "similarity": similarity,
-                    "embedding_count": len(db[person_id]["embeddings"])
+                    "similarity": similarity
                 }
-            
-        db[person_id]["embeddings"].append(new_embedding_record)
 
-        self.save_database(db)
-
+        save_face_embedding(
+            person_id=person_id,
+            embedding=embedding.tolist(),
+            detector_model=DETECTOR_MODEL_NAME,
+            recognizer_model=RECOGNIZER_MODEL_NAME,
+            embedding_model_version=EMBEDDING_MODEL_VERSION,
+            quality=self.last_face_quality
+        )
+        
         return {
             "status": "enrolled",
             "person_id": person_id,
-            "embedding_count": len(db[person_id]["embeddings"]),
             "model_version": EMBEDDING_MODEL_VERSION,
             "quality": self.last_face_quality
         }
@@ -190,50 +175,86 @@ class FaceEngine:
     def verify_face(self, image_path: str, threshold: float = 0.70):
         query_embedding = self.get_embedding(image_path)
 
-        db = self.load_database()
+        records = get_all_embeddings()
 
-        if not db:
+        if not records:
+            log_verification(
+                matched_person_id=None,
+                similarity=None,
+                threshold=threshold,
+                verified=False,
+                quality=self.last_face_quality
+            )
+
             return {
-                "match": False,
+                "verified": False,
+                "person_id": None,
+                "similarity": None,
+                "threshold": threshold,
+                "quality": self.last_face_quality,
                 "message": "No enrolled faces found"
             }
-
+        
         best_person_id = None
         best_similarity = -1.0
 
-        for person_id, record in db.items():
-            for embedding_record in record["embeddings"]:
-                stored_embedding = np.array(embedding_record["embedding"], dtype=np.float32)
+        for record in records:
+            stored_embedding_text = record["embedding"]
+            stored_embedding = np.array(
+                [float(x) for x in stored_embedding_text.strip("[]").split(",")],
+                dtype=np.float32
+            )
+            
+            similarity = float(np.dot(query_embedding, stored_embedding))
 
-                similarity = float(np.dot(query_embedding, stored_embedding))
-
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_person_id = person_id
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_person_id = record["person_id"]
 
         is_match = best_similarity >= threshold
+        matched_person_id = best_person_id if is_match else None
+
+        log_verification(
+            matched_person_id=matched_person_id,
+            similarity=best_similarity,
+            threshold=threshold,
+            verified=is_match,
+            quality=self.last_face_quality
+        )
 
         return {
             "verified": is_match,
-            "person_id": best_person_id if is_match else None,
+            "person_id": matched_person_id,
             "similarity": best_similarity,
             "threshold": threshold,
             "quality": self.last_face_quality,
             "message": "Face verified successfully" if is_match else "No matching face found"
         }
 
-    def delete_person(self, person_id: str):
-        db = self.load_database()
+    def list_people(self):
+        people = repo_list_people()
 
-        if person_id not in db:
+        return {
+            "count": len(people),
+            "people": [
+                {
+                    "person_id": person["person_id"],
+                    "embedding_count": person["embedding_count"],
+                    "model_version": person["model_version"]
+                }
+                for person in people
+            ]
+        }
+
+    def delete_person(self, person_id: str):
+        deleted = repo_delete_person(person_id)
+
+        if not deleted:
             return {
                 "deleted": False,
                 "person_id": person_id,
                 "message": "Person not found"
             }
-
-        del db[person_id]
-        self.save_database(db)
 
         return {
             "deleted": True,
