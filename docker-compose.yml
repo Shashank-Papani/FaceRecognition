@@ -19,6 +19,7 @@ services:
       - "8080:8000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/face_recognition
+      API_KEY: dev-secret-key20
     depends_on:
       - db
     volumes:

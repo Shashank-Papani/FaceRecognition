@@ -1,7 +1,8 @@
 import shutil
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from app.face_engine import FaceEngine
+from app.auth import verify_api_key
 
 app = FastAPI(title="Face Recognition API")
 engine = FaceEngine()
@@ -28,7 +29,8 @@ def health_check():
 @app.post("/enroll")
 def enroll_face(
     person_id: str = Form(...),
-    image: UploadFile = File(...)
+    image: UploadFile = File(...),
+    authenticated: bool = Depends(verify_api_key)
 ):
     try:
         image_path = UPLOAD_DIR / image.filename
@@ -48,7 +50,8 @@ def enroll_face(
 @app.post("/verify")
 def verify_face(
     image: UploadFile = File(...),
-    threshold: float = Form(0.70)
+    threshold: float = Form(0.70),
+    authenticated: bool = Depends(verify_api_key)
 ):
     try:
         image_path = UPLOAD_DIR / image.filename
@@ -66,11 +69,16 @@ def verify_face(
         raise HTTPException(status_code=400, detail=str(e))
     
 @app.get("/people")
-def list_people():
+def list_people(
+    authenticated: bool = Depends(verify_api_key)
+):
     return engine.list_people()
 
 @app.delete("/people/{person_id}")
-def delete_person(person_id: str):
+def delete_person(
+    person_id: str,
+    authenticated: bool = Depends(verify_api_key)
+):
     result = engine.delete_person(person_id)
 
     if not result["deleted"]:
