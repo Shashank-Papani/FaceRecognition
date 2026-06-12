@@ -75,6 +75,10 @@ def health_check():
         "database": db_status
     }
 
+@app.get("/model-info")
+def model_info():
+    return engine.model_info()
+
 @app.post("/enroll")
 def enroll_face(
     person_id: str = Form(...),

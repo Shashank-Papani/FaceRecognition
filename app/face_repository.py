@@ -8,14 +8,14 @@ def database_health_check():
             db.execute(text("SELECT 1"))
 
         return {
-            "connected": "True",
+            "connected": True,
             "status": "success",
             "error": None
         }
     
     except Exception as e:
         return {
-            "connected": "False",
+            "connected": False,
             "status": "failed",
             "error": str(e)
         }

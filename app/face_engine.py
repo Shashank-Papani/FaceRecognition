@@ -40,6 +40,18 @@ class FaceEngine:
             ""
         )
 
+    def model_info(self):
+        return{
+            "detector_model": DETECTOR_MODEL_NAME,
+            "recognizer_model": RECOGNIZER_MODEL_NAME,
+            "embedding_model_version": EMBEDDING_MODEL_VERSION,
+            "embedding_dimension": 128,
+            "similarity_metric": "cosine_similarity",
+            "defualt_threshold": 0.70,
+            "min_face_confidence": MIN_FACE_CONFIDENCE,
+            "min_face_size": MIN_FACE_SIZE,
+        }
+
     def database_health_check(self):
         from app.face_repository import database_health_check
         return database_health_check()
