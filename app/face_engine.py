@@ -276,4 +276,17 @@ class FaceEngine:
             "threshold": threshold
         }
     
+    def detect_face_info(self, image_path: str):
+        image = cv2.imread(image_path)
+
+        if image is None:
+            raise ValueError(f"Could not read image: {image_path}")
+        
+        self.detect_single_face(image)
+
+        return {
+            "face_detected": True,
+            "quality": self.last_face_quality,
+            "message": "One valid face detected"
+        }
     
