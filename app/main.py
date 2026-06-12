@@ -4,6 +4,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from app.face_engine import FaceEngine
 from app.auth import verify_api_key
 from uuid import uuid4
+from app.errors import raise_api_error
 
 app = FastAPI(title="Face Recognition API")
 engine = FaceEngine()
@@ -64,7 +65,7 @@ def enroll_face(
         return result
     
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise_api_error(e)
     
     finally:
         if image_path and image_path.exists():
@@ -89,7 +90,7 @@ def verify_face(
         return result
     
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise_api_error(e)
     
     finally:
         if image_path and image_path.exists():
@@ -109,6 +110,13 @@ def delete_person(
     result = engine.delete_person(person_id)
 
     if not result["deleted"]:
-        raise HTTPException(status_code=404, detail=result["message"])
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "error_code": "PERSON_NOT_FOUND",
+                "message": result["message"]
+            }
+        )
     
     return result
