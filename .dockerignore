@@ -6,7 +6,12 @@ __pycache__/
 .git/
 .gitignore
 
+.env
+.DS_Store
+
 uploads/
 test_images/
+threshold_tests/
+
 database/
-.env
+db/face_db.json
