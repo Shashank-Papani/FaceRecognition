@@ -1,3 +1,6 @@
+import time
+import logging
+from fastapi import Request
 import shutil
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
@@ -6,7 +9,33 @@ from app.auth import verify_api_key
 from uuid import uuid4
 from app.errors import raise_api_error
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Face Recognition API")
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    latency_ms = (time.perf_counter() - start_time) * 1000
+
+    logger.info(
+        "%s %s %s %.2fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        latency_ms
+    )
+
+    response.headers["X-Process-Time-ms"] = f"{latency_ms:.2f}"
+
+    return response
+
 engine = FaceEngine()
 
 UPLOAD_DIR = Path("uploads")
