@@ -79,6 +79,29 @@ def health_check():
 def model_info():
     return engine.model_info()
 
+@app.post("/detect")
+def detect_face(
+    image: UploadFile = File(...),
+    authenticated: bool = Depends(verify_api_key)
+):
+    image_path = None
+
+    try:
+        image_path = save_upload_file(image)
+
+        result = engine.detect_face_info(
+            image_path=str(image_path)
+        )
+
+        return result
+    
+    except Exception as e:
+        raise_api_error(e)
+
+    finally:
+        if image_path and image_path.exists():
+            image_path.unlink()
+
 @app.post("/enroll")
 def enroll_face(
     person_id: str = Form(...),
