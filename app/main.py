@@ -20,18 +20,36 @@ app = FastAPI(title="Face Recognition API")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
     start_time = time.perf_counter()
-    response = await call_next(request)
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
+        logger.exception(
+            "request_id=%s method=%s path=%s latency_ms=%.2f",
+            request_id,
+            request.method,
+            request.url.path,
+            latency_ms,
+        )
+        raise
+
     latency_ms = (time.perf_counter() - start_time) * 1000
 
     logger.info(
-        "%s %s %s %.2fms",
+        "request_id=%s method=%s path=%s status=%s latency_ms=%.2f",
+        request_id,
         request.method,
         request.url.path,
         response.status_code,
-        latency_ms
+        latency_ms,
     )
 
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time-ms"] = f"{latency_ms:.2f}"
 
     return response
