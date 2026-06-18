@@ -1,4 +1,5 @@
 import json
+import re
 from sqlalchemy import text
 from app.db import SessionLocal
 
@@ -18,6 +19,70 @@ def database_health_check():
             "connected": False,
             "status": "failed",
             "error": str(e)
+        }
+    
+
+COLLECTION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
+FACE_MODEL_VERSION = "sface_v1"
+
+def is_valid_collection_id(collection_id: str) -> bool:
+    return bool(COLLECTION_ID_PATTERN.fullmatch(collection_id))
+
+def build_collection_arn(collection_id: str) -> str:
+    return f"arn:local:face-recognition:collection/{collection_id}"
+
+def create_collection(collection_id: str):
+    if not is_valid_collection_id(collection_id):
+        return {
+            "success": False,
+            "error_code": "InvalidParameterException",
+            "message": "collectionId contains invalid characters. Allowed: letters, digits, underscores, hyphens. Max 255 chars."
+        }
+    collection_arn = build_collection_arn(collection_id)
+
+    with SessionLocal() as db:
+        existing = db.execute(
+            text("""
+                SELECT collection_id
+                FROM face_collections
+                WHERE collection_id = :collection_id     
+            """),
+            {"collection_id": collection_id}
+        ).first()
+        
+        if existing:
+            return{
+                "success": False,
+                "error_code": "ResourceAlreadyExistsException",
+                "message": "Collection with this ID already exists"
+            }
+        
+        db.execute(
+            text("""
+                INSERT INTO face_collections (
+                    collection_id,
+                    collection_arn,
+                    face_model_version
+                )
+                VALUES(
+                    :collection_id,
+                    :collection_arn,
+                    :face_model_version
+                )
+        """),
+        {
+            "collection_id": collection_id,
+            "collection_arn": collection_arn,
+            "face_model_version": FACE_MODEL_VERSION,
+        }
+        )
+        db.commit
+
+        return {
+            "success": True,
+            "statusCode": 200,
+            "collectionArn": collection_arn,
+            "faceModelVersion": FACE_MODEL_VERSION
         }
     
 def create_person_if_not_exists(person_id: str):

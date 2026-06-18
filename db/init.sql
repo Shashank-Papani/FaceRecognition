@@ -1,5 +1,14 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
+CREATE TABLE IF NOT EXISTS face_collections (
+    id BIGSERIAL PRIMARY KEY,
+    collection_id TEXT UNIQUE NOT NULL,
+    collection_arn TEXT UNIQUE NOT NULL,
+    face_count BIGINT DEFAULT 0,
+    face_model_version TEXT NOT NULL,
+    creation_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
+);
+
 CREATE TABLE IF NOT EXISTS people (
     id BIGSERIAL PRIMARY KEY,
     person_id TEXT UNIQUE NOT NULL,
