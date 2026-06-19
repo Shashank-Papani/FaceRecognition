@@ -3,11 +3,13 @@ import logging
 from fastapi import Request
 import shutil
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
+from pydantic import BaseModel
 from app.face_engine import FaceEngine
 from app.auth import verify_api_key
 from uuid import uuid4
 from app.errors import raise_api_error
+from app import face_repository as repo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,10 +20,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Face Recognition API")
 
+class CreateCollectionRequest(BaseModel):
+    collectionId: str
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
 
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    request.state.request_id = request_id
     start_time = time.perf_counter()
 
     try:
@@ -119,6 +125,82 @@ def detect_face(
     finally:
         if image_path and image_path.exists():
             image_path.unlink()
+
+@app.post("/collections")
+def create_collections(
+    request: CreateCollectionRequest,
+    authenticated: bool = Depends(verify_api_key)
+):
+    result = repo.create_collection(request.collectionId)
+
+    if not result.get("success"):
+        status_code = 409 if result["error_code"] == "ResourceAlreadyExistsException" else 400
+
+        raise HTTPException(
+            status_code = status_code,
+            detail = {
+                "success": False,
+                "error_code": result["error_code"],
+                "message": result["message"]
+            }
+        )
+    
+    return {
+        "statusCode": result["statusCode"],
+        "collectionArn": result["collectionArn"],
+        "faceModelVersion": result["faceModelVersion"]
+    }
+
+@app.get("/collections")
+def list_collections(
+    maxResults: int = Query(1000),
+    nextToken: str | None = Query(None),
+    authenticated: bool = Depends(verify_api_key)
+):
+    return repo.list_collections(
+        max_results=maxResults,
+        next_token=nextToken
+    )
+
+@app.get("/collections/{collection_id}")
+def describe_collection(
+    collection_id: str,
+    authenticated: bool = Depends(verify_api_key)
+):
+    result = repo.describe_collection(collection_id)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code = 404,
+            detail ={
+                "success": False,
+                "error_code": result["error_code"],
+                "message": result["message"]
+            }
+        )
+    
+    return {
+        "collectionARN": result["collectionARN"],
+        "faceCount": result["faceCount"],
+        "faceModelVersion": result["faceModelVersion"],
+        "creationTimestamp": result["creationTimestamp"]
+    }
+
+@app.delete("/collections/{collection_id}")
+def delete_collection(
+    collection_id: str,
+    authenticated: bool = Depends(verify_api_key)
+):
+    result = repo.delete_collection(collection_id)
+
+    if not result.get("success"):
+        return {
+            "statusCode": 404
+        }
+
+    return {
+        "statusCode": 200
+    }
 
 @app.post("/enroll")
 def enroll_face(

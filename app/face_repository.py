@@ -25,11 +25,14 @@ def database_health_check():
 COLLECTION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 FACE_MODEL_VERSION = "sface_v1"
 
+
 def is_valid_collection_id(collection_id: str) -> bool:
     return bool(COLLECTION_ID_PATTERN.fullmatch(collection_id))
 
+
 def build_collection_arn(collection_id: str) -> str:
     return f"arn:local:face-recognition:collection/{collection_id}"
+
 
 def create_collection(collection_id: str):
     if not is_valid_collection_id(collection_id):
@@ -38,6 +41,7 @@ def create_collection(collection_id: str):
             "error_code": "InvalidParameterException",
             "message": "collectionId contains invalid characters. Allowed: letters, digits, underscores, hyphens. Max 255 chars."
         }
+
     collection_arn = build_collection_arn(collection_id)
 
     with SessionLocal() as db:
@@ -45,18 +49,18 @@ def create_collection(collection_id: str):
             text("""
                 SELECT collection_id
                 FROM face_collections
-                WHERE collection_id = :collection_id     
+                WHERE collection_id = :collection_id
             """),
             {"collection_id": collection_id}
         ).first()
-        
+
         if existing:
-            return{
+            return {
                 "success": False,
                 "error_code": "ResourceAlreadyExistsException",
                 "message": "Collection with this ID already exists"
             }
-        
+
         db.execute(
             text("""
                 INSERT INTO face_collections (
@@ -64,25 +68,131 @@ def create_collection(collection_id: str):
                     collection_arn,
                     face_model_version
                 )
-                VALUES(
+                VALUES (
                     :collection_id,
                     :collection_arn,
                     :face_model_version
                 )
-        """),
-        {
-            "collection_id": collection_id,
-            "collection_arn": collection_arn,
-            "face_model_version": FACE_MODEL_VERSION,
-        }
+            """),
+            {
+                "collection_id": collection_id,
+                "collection_arn": collection_arn,
+                "face_model_version": FACE_MODEL_VERSION,
+            }
         )
-        db.commit
+
+        db.commit()
+
+    return {
+        "success": True,
+        "statusCode": 200,
+        "collectionArn": collection_arn,
+        "faceModelVersion": FACE_MODEL_VERSION
+    }
+
+
+def describe_collection(collection_id: str):
+    with SessionLocal() as db:
+        result = db.execute(
+            text("""
+                SELECT
+                    collection_arn,
+                    face_count,
+                    face_model_version,
+                    creation_timestamp
+                FROM face_collections
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        )
+
+        row = result.mappings().first()
+
+        if not row:
+            return {
+                "success": False,
+                "error_code": "ResourceNotFoundException",
+                "message": "Collection does not exist"
+            }
 
         return {
             "success": True,
-            "statusCode": 200,
-            "collectionArn": collection_arn,
-            "faceModelVersion": FACE_MODEL_VERSION
+            "collectionARN": row["collection_arn"],
+            "faceCount": row["face_count"],
+            "faceModelVersion": row["face_model_version"],
+            "creationTimestamp": row["creation_timestamp"].isoformat()
+        }
+
+
+def list_collections(max_results: int = 1000, next_token: str | None = None):
+    if max_results < 1:
+        max_results = 1
+
+    if max_results > 1000:
+        max_results = 1000
+
+    offset = 0
+
+    if next_token:
+        try:
+            offset = int(next_token)
+        except ValueError:
+            offset = 0
+
+    with SessionLocal() as db:
+        result = db.execute(
+            text("""
+                SELECT
+                    collection_id,
+                    face_model_version
+                FROM face_collections
+                ORDER BY collection_id
+                LIMIT :limit
+                OFFSET :offset
+            """),
+            {
+                "limit": max_results + 1,
+                "offset": offset
+            }
+        )
+
+        rows = result.mappings().all()
+
+    has_more = len(rows) > max_results
+    visible_rows = rows[:max_results]
+
+    new_next_token = str(offset + max_results) if has_more else None
+
+    return {
+        "collectionIds": [row["collection_id"] for row in visible_rows],
+        "nextToken": new_next_token,
+        "faceModelVersions": [row["face_model_version"] for row in visible_rows]
+    }
+
+
+def delete_collection(collection_id: str):
+    with SessionLocal() as db:
+        result = db.execute(
+            text("""
+                DELETE FROM face_collections
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        )
+
+        db.commit()
+
+        if result.rowcount == 0:
+            return {
+                "success": False,
+                "statusCode": 404,
+                "error_code": "ResourceNotFoundException",
+                "message": "Collection does not exist"
+            }
+
+        return {
+            "success": True,
+            "statusCode": 200
         }
     
 def create_person_if_not_exists(person_id: str):
