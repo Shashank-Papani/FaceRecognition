@@ -1,6 +1,6 @@
 import json
 import re
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from app.db import SessionLocal
 
 def database_health_check():
@@ -280,6 +280,98 @@ def save_indexed_face(
             {"collection_id": collection_id}
         )
         db.commit()
+
+def list_faces(
+    collection_id: str,
+    max_results: int = 4096,
+    next_token: str | None = None,
+    face_ids: list[str] | None = None
+):
+    if not collection_exists(collection_id):
+        return {
+            "success": False,
+            "error_code": "ResourceNotFoundException",
+            "message": "Collection does not exist"
+        }
+
+    if max_results < 1:
+        max_results = 1
+
+    if max_results > 4096:
+        max_results = 4096
+
+    offset = 0
+
+    if next_token:
+        try:
+            offset = int(next_token)
+        except ValueError:
+            offset = 0
+
+    params = {
+        "collection_id": collection_id,
+        "limit": max_results + 1,
+        "offset": offset
+    }
+
+    face_filter_sql = ""
+
+    if face_ids:
+        face_filter_sql = "AND CAST(face_id AS TEXT) IN :face_ids"
+        params["face_ids"] = face_ids
+
+    query = text(f"""
+        SELECT
+            face_id,
+            image_id,
+            external_image_id,
+            confidence,
+            bounding_box
+        FROM face_embeddings
+        WHERE collection_id = :collection_id
+        {face_filter_sql}
+        ORDER BY created_at
+        LIMIT :limit
+        OFFSET :offset
+    """)
+
+    if face_ids:
+        query = query.bindparams(bindparam("face_ids", expanding=True))
+
+    with SessionLocal() as db:
+        result = db.execute(query, params)
+
+        rows = result.mappings().all()
+
+        version_result = db.execute(
+            text("""
+                SELECT face_model_version
+                FROM face_collections
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        )
+
+        version_row = version_result.mappings().first()
+
+    has_more = len(rows) > max_results
+    visible_rows = rows[:max_results]
+
+    return {
+        "success": True,
+        "faces": [
+            {
+                "faceId": str(row["face_id"]),
+                "imageId": str(row["image_id"]),
+                "externalImageId": row["external_image_id"],
+                "confidence": row["confidence"],
+                "boundingBox": row["bounding_box"]
+            }
+            for row in visible_rows
+        ],
+        "nextToken": str(offset + max_results) if has_more else None,
+        "faceModelVersion": version_row["face_model_version"] if version_row else FACE_MODEL_VERSION
+    }
 
 def create_person_if_not_exists(person_id: str):
     with SessionLocal() as db:

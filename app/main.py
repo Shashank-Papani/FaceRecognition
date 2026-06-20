@@ -244,6 +244,37 @@ def index_faces(
         if image_path and image_path.exists():
             image_path.unlink()
 
+@app.get("/collections/{collection_id}/faces")
+def list_faces(
+    collection_id: str,
+    maxResults: int = Query(4096),
+    nextToken: str | None = Query(None),
+    faceIds: list[str] | None = Query(None),
+    authenticated: bool = Depends(verify_api_key)
+):
+    result = repo.list_faces(
+        collection_id=collection_id,
+        max_results=maxResults,
+        next_token=nextToken,
+        face_ids=faceIds
+    )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "error_code": result["error_code"],
+                "message": result["message"]
+            }
+        )
+
+    return {
+        "faces": result["faces"],
+        "nextToken": result["nextToken"],
+        "faceModelVersion": result["faceModelVersion"]
+    }
+
 @app.post("/enroll")
 def enroll_face(
     person_id: str = Form(...),
