@@ -23,6 +23,9 @@ app = FastAPI(title="Face Recognition API")
 class CreateCollectionRequest(BaseModel):
     collectionId: str
 
+class DeleteFacesRequest(BaseModel):
+    faceIds: list[str]
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
 
@@ -151,6 +154,8 @@ def create_collection(
         "faceModelVersion": result["faceModelVersion"]
     }
 
+
+
 @app.get("/collections")
 def list_collections(
     maxResults: int = Query(1000),
@@ -273,6 +278,33 @@ def list_faces(
         "faces": result["faces"],
         "nextToken": result["nextToken"],
         "faceModelVersion": result["faceModelVersion"]
+    }
+
+@app.delete("/collections/{collection_id}/faces")
+def delete_faces(
+    collection_id: str,
+    request: DeleteFacesRequest,
+    authenticated: bool = Depends(verify_api_key)
+):
+    result = repo.delete_faces(
+        collection_id=collection_id,
+        face_ids=request.faceIds
+    )
+
+    if not result.get("success"):
+        status_code = 404 if result["error_code"] == "ResourceNotFoundException" else 400
+
+        raise HTTPException(
+            status_code=status_code,
+            detail={
+                "success": False,
+                "error_code": result["error_code"],
+                "message": result["message"]
+            }
+        )
+
+    return {
+        "deletedFaces": result["deletedFaces"]
     }
 
 @app.post("/enroll")

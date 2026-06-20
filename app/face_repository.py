@@ -373,6 +373,67 @@ def list_faces(
         "faceModelVersion": version_row["face_model_version"] if version_row else FACE_MODEL_VERSION
     }
 
+def delete_faces(
+    collection_id: str,
+    face_ids: list[str]
+):
+    if not collection_exists(collection_id):
+        return {
+            "success": False,
+            "error_code": "ResourceNotFoundException",
+            "message": "Collection does not exist"
+        }
+    
+    if not face_ids:
+        return {
+            "success": False,
+            "error_code": "InvalidParameterException",
+            "message": "No face IDs provided, or invalid UUID format"
+        }
+    
+    if len(face_ids) > 4096:
+        return {
+            "success": False,
+            "error_code": "InvalidParameterException",
+            "message": "Maximum 4096 face IDs allowed per call"
+        }
+    
+    params = {
+        "collection_id": collection_id,
+        "face_ids": face_ids
+    }
+
+    delete_query = text("""
+        DELETE FROM face_embeddings
+        WHERE collection_id = :collection_id
+        AND CAST(face_id AS TEXT) IN :face_ids
+        RETURNING CAST(face_id AS TEXT) AS face_id
+    """).bindparams(bindparam("face_ids", expanding=True))
+
+    with SessionLocal() as db:
+        result = db.execute(delete_query, params)
+        deleted_rows = result.mappings().all()
+
+        db.execute(
+            text("""
+                UPDATE face_collections
+                SET face_count = (
+                    SELECT COUNT(*)
+                    FROM face_embeddings
+                    WHERE collection_id = :collection_id
+                )
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        )
+
+        db.commit()
+
+    return {
+        "success": True,
+        "deletedFaces": [row["face_id"] for row in deleted_rows]
+    }
+
 def create_person_if_not_exists(person_id: str):
     with SessionLocal() as db:
         db.execute(
