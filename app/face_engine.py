@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from pathlib import Path
+from uuid import uuid4
 
 from app.face_repository import (
     save_face_embedding,
@@ -8,7 +9,9 @@ from app.face_repository import (
     list_people as repo_list_people,
     delete_person as repo_delete_person,
     log_verification,
-    find_best_match
+    find_best_match,
+    collection_exists,
+    save_indexed_face
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -109,16 +112,28 @@ class FaceEngine:
 
         face = valid_faces[0].copy()
 
-        self.last_face_quality = {
-            "face_confidence": float(face[-1]),
-            "face_width": float(face[2]),
-            "face_height": float(face[3])
-        }
-
         # Scale face coordinates back to original image size
         if scale != 1.0:
             face[:14] = face[:14] / scale
-        
+
+        x, y, face_w, face_h = face[:4]
+        confidence = float(face[-1])
+
+        bounding_box = {
+            "Width": float(face_w / original_w),
+            "Height": float(face_h / original_h),
+            "Left": float(x / original_w),
+            "Top": float(y / original_h)
+        }
+
+        self.last_face_quality = {
+            "face_confidence": confidence,
+            "face_confidence_percent": confidence * 100,
+            "face_width": float(face_w),
+            "face_height": float(face_h),
+            "bounding_box": bounding_box
+        }
+
         return face
 
     def get_embedding(self, image_path: str):
@@ -136,6 +151,57 @@ class FaceEngine:
         embedding = embedding / np.linalg.norm(embedding)
 
         return embedding
+    
+    def index_face(
+        self,
+        collection_id: str,
+        image_path: str,
+        external_image_id: str | None = None
+    ):
+        if not collection_exists(collection_id):
+            return{
+                "success": False,
+                "error_code": "ResourceNotFoundException",
+                "message": "Collection does not exist"
+            }
+        
+        embedding = self.get_embedding(image_path)
+
+        face_id = str(uuid4())
+        image_id = str(uuid4())
+
+        confidence = self.last_face_quality["face_confidence_percent"]
+        bounding_box = self.last_face_quality["bounding_box"]
+
+        save_indexed_face(
+            collection_id = collection_id,
+            face_id = face_id,
+            image_id = image_id,
+            external_image_id = external_image_id,
+            embedding = embedding.tolist(),
+            confidence = confidence,
+            bounding_box = bounding_box,
+            detector_model = DETECTOR_MODEL_NAME,
+            recognizer_model = RECOGNIZER_MODEL_NAME,
+            embedding_model_version = EMBEDDING_MODEL_VERSION,
+            quality = self.last_face_quality
+        )
+
+        return {
+            "success": True,
+            "faceRecords": [
+                {
+                    "face": {
+                        "faceId": face_id,
+                        "imageId": image_id,
+                        "externalImageId": external_image_id,
+                        "confidence": confidence,
+                        "boundingBox": bounding_box 
+                    }
+                }
+            ],
+            "faceModelVersion": EMBEDDING_MODEL_VERSION
+        }
 
     def compare_faces(self, image_path_1: str, image_path_2: str):
         emb1 = self.get_embedding(image_path_1)

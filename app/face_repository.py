@@ -195,6 +195,92 @@ def delete_collection(collection_id: str):
             "statusCode": 200
         }
     
+def collection_exists(collection_id: str) -> bool:
+    with SessionLocal() as db:
+        result = db.execute(
+            text("""
+                SELECT collection_id
+                FROM face_collections
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        )
+
+        return result.first() is not None
+    
+def save_indexed_face(
+        collection_id: str,
+        face_id: str,
+        image_id: str,
+        external_image_id: str| None,
+        embedding: list[float],
+        confidence: float,
+        bounding_box: dict,
+        detector_model: str,
+        recognizer_model: str,
+        embedding_model_version: str,
+        quality: dict
+):
+    embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+    with SessionLocal() as db:
+        db.execute(
+            text("""
+                INSERT INTO face_embeddings(
+                    face_id,
+                    image_id,
+                    collection_id,
+                    external_image_id,
+                    embedding,
+                    confidence,
+                    bounding_box,
+                    detector_model,
+                    recognizer_model,
+                    embedding_model_version,
+                    quality
+                )
+                VALUES(
+                    CAST(:face_id AS uuid),
+                    CAST(:image_id AS uuid),
+                    :collection_id,
+                    :external_image_id,
+                    :embedding,
+                    :confidence,
+                    CAST(:bounding_box AS jsonb),
+                    :detector_model,
+                    :recognizer_model,
+                    :embedding_model_version,
+                    CAST(:quality AS jsonb)
+                )
+            """),
+            {
+                "face_id": face_id,
+                "image_id": image_id,
+                "collection_id": collection_id,
+                "external_image_id": external_image_id,
+                "embedding": embedding_str,
+                "confidence": confidence,
+                "bounding_box": json.dumps(bounding_box),
+                "detector_model": detector_model,
+                "recognizer_model": recognizer_model,
+                "embedding_model_version": embedding_model_version,
+                "quality": json.dumps(quality),
+            }
+        )
+
+        db.execute(
+            text("""
+                UPDATE face_collections
+                SET face_count = (
+                    SELECT COUNT(*)
+                    FROM face_embeddings
+                    WHERE collection_id = :collection_id
+                )
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        )
+        db.commit()
+
 def create_person_if_not_exists(person_id: str):
     with SessionLocal() as db:
         db.execute(

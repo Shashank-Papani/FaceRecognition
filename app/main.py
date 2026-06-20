@@ -127,7 +127,7 @@ def detect_face(
             image_path.unlink()
 
 @app.post("/collections")
-def create_collections(
+def create_collection(
     request: CreateCollectionRequest,
     authenticated: bool = Depends(verify_api_key)
 ):
@@ -201,6 +201,48 @@ def delete_collection(
     return {
         "statusCode": 200
     }
+
+@app.post("/collections/{collection_id}/faces")
+def index_faces(
+    collection_id: str,
+    image: UploadFile = File(...),
+    externalImageId: str | None = Form(None),
+    authenticated: bool = Depends(verify_api_key)
+):
+    image_path = None
+    try:
+        image_path = save_upload_file(image)
+
+        result = engine.index_face(
+            collection_id = collection_id,
+            image_path = str(image_path),
+            external_image_id = externalImageId
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code = 404,
+                detail = {
+                    "success": False,
+                    "error_code": result["error_code"],
+                    "message": result["message"]
+                }
+            )
+        
+        return {
+            "faceRecords": result["faceRecords"],
+            "faceModelVersion": result["faceModelVersion"]
+        }
+    
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise_api_error(e)
+
+    finally:
+        if image_path and image_path.exists():
+            image_path.unlink()
 
 @app.post("/enroll")
 def enroll_face(
