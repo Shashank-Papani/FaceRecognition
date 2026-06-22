@@ -14,3 +14,5 @@ threshold_tests/
 
 database/face_db.json
 db/face_db.json
+
+tests/private_assets/

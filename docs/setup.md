@@ -102,3 +102,18 @@ How to check your DB content
             COUNT(*) AS embedding_count
         FROM face_embeddings
         GROUP BY person_id;
+
+testing:
+
+Run these commands in order:
+
+    docker compose -f docker-compose.test.yml up -d --wait
+
+    To confirm the container is up:
+
+    docker compose -f docker-compose.test.yml ps
+
+    Then run the full suite:
+
+    DATABASE_URL="postgresql+psycopg2://postgres:test-password@localhost:5434/face_recognition_test" \
+    pytest -v

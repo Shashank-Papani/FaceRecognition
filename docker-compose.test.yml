@@ -1,0 +1,29 @@
+services:
+  test-db:
+    image: pgvector/pgvector:pg17
+    container_name: face-postgres-test
+
+    environment:
+      POSTGRES_DB: face_recognition_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test-password
+
+    ports:
+      - "5434:5432"
+
+    volumes:
+      - ./tests/sql/init_test.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+
+    tmpfs:
+      - /var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d face_recognition_test"
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
