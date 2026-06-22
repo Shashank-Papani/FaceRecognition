@@ -1,0 +1,83 @@
+name: Face Recognition CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  automated-tests:
+    name: API and Database Tests
+    runs-on: ubuntu-latest
+
+    env:
+      API_KEY: test-api-key
+      DATABASE_URL: postgresql+psycopg2://postgres:test-password@localhost:5434/face_recognition_test
+      PYTHONUNBUFFERED: "1"
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+
+        env:
+          POSTGRES_DB: face_recognition_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-password
+
+        ports:
+          - 5434:5432
+
+        options: >-
+          --health-cmd "pg_isready -U postgres -d face_recognition_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 \
+            libglib2.0-0 \
+            postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Initialize test database
+        env:
+          PGPASSWORD: test-password
+        run: |
+          psql \
+            --host localhost \
+            --port 5434 \
+            --username postgres \
+            --dbname face_recognition_test \
+            --file tests/sql/init_test.sql
+
+      - name: Run API and database tests
+        run: |
+          python -m pytest -v \
+            --ignore=tests/integration/test_ml_pipeline_integration.py
