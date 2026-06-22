@@ -1,15 +1,24 @@
 import time
 import logging
-from fastapi import Request
 import shutil
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
 from pydantic import BaseModel
 from app.face_engine import FaceEngine
 from app.auth import verify_api_key
 from uuid import uuid4
 from app.errors import raise_api_error
 from app import face_repository as repo
+
+from fastapi import (
+    FastAPI,
+    Request,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+    Depends,
+    Query,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,11 +78,15 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 def save_upload_file(image: UploadFile) -> Path:
-    file_extension = Path(image.filename).suffix.lower()
+    filename = image.filename or ""
+    file_extension = Path(filename).suffix.lower()
 
-    if file_extension not in [".jpg", ".jpeg", ".png"]:
-        raise ValueError("Only JPG, JPEG, and PNG images are supported.")
-    
+    if file_extension not in {".jpg", ".jpeg", ".png"}:
+        raise ValueError(
+            "InvalidImageFormatException: "
+            "Only JPG, JPEG, and PNG images are supported."
+        )
+
     image_path = UPLOAD_DIR / f"{uuid4()}{file_extension}"
 
     image.file.seek(0)
@@ -82,7 +95,11 @@ def save_upload_file(image: UploadFile) -> Path:
         shutil.copyfileobj(image.file, buffer)
 
     if image_path.stat().st_size == 0:
-        raise ValueError("Uploaded image is empty.")
+        image_path.unlink(missing_ok=True)
+
+        raise ValueError(
+            "InvalidParameterException: Uploaded image is empty."
+        )
 
     return image_path
 
@@ -106,9 +123,10 @@ def health_check():
 def model_info():
     return engine.model_info()
 
-@app.post("/detect")
-def detect_face(
+@app.post("/faces/detect")
+def detect_faces(
     image: UploadFile = File(...),
+    attributes: str = Form("DEFAULT"),
     authenticated: bool = Depends(verify_api_key)
 ):
     image_path = None
@@ -116,19 +134,44 @@ def detect_face(
     try:
         image_path = save_upload_file(image)
 
-        result = engine.detect_face_info(
-            image_path=str(image_path)
+        return engine.detect_faces_info(
+            image_path=str(image_path),
+            attributes=attributes
         )
 
-        return result
-    
+    except ValueError as e:
+        message = str(e)
+
+        if message.startswith("InvalidImageFormatException"):
+            error_code = "InvalidImageFormatException"
+        else:
+            error_code = "InvalidParameterException"
+
+        clean_message = (
+            message.split(":", 1)[1].strip()
+            if ":" in message
+            else message
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": error_code,
+                "message": clean_message
+            }
+        )
+
+    except HTTPException:
+        raise
+
     except Exception as e:
         raise_api_error(e)
 
     finally:
         if image_path and image_path.exists():
             image_path.unlink()
-
+            
 @app.post("/collections")
 def create_collection(
     request: CreateCollectionRequest,
@@ -158,7 +201,7 @@ def create_collection(
 
 @app.get("/collections")
 def list_collections(
-    maxResults: int = Query(1000),
+    maxResults: int = Query(1000, ge=1, le=1000),
     nextToken: str | None = Query(None),
     authenticated: bool = Depends(verify_api_key)
 ):
@@ -199,12 +242,17 @@ def delete_collection(
     result = repo.delete_collection(collection_id)
 
     if not result.get("success"):
-        return {
-            "statusCode": 404
-        }
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "error_code": result["error_code"],
+                "message": result["message"]
+            }
+        )
 
     return {
-        "statusCode": 200
+        "statusCode": result["statusCode"]
     }
 
 @app.post("/collections/{collection_id}/faces")
@@ -252,7 +300,7 @@ def index_faces(
 @app.get("/collections/{collection_id}/faces")
 def list_faces(
     collection_id: str,
-    maxResults: int = Query(4096),
+    maxResults: int = Query(4096, ge=1, le=4096),
     nextToken: str | None = Query(None),
     faceIds: list[str] | None = Query(None),
     authenticated: bool = Depends(verify_api_key)
@@ -311,8 +359,8 @@ def delete_faces(
 def search_faces_by_image(
     collection_id: str,
     image: UploadFile = File(...),
-    faceMatchThreshold: float = Form(80.0),
-    maxFaces: int = Form(1),
+    faceMatchThreshold: float = Form(80.0, ge=0.0, le=100.0),
+    maxFaces: int = Form(1, ge=1, le=4096),
     authenticated: bool = Depends(verify_api_key)
 ):
     image_path = None
@@ -364,92 +412,3 @@ def search_faces_by_image(
         if image_path and image_path.exists():
             image_path.unlink()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-@app.post("/enroll")
-def enroll_face(
-    person_id: str = Form(...),
-    image: UploadFile = File(...),
-    authenticated: bool = Depends(verify_api_key)
-):
-    image_path = None
-
-    try:
-        image_path = save_upload_file(image)
-
-        result = engine.enroll_face(
-            person_id=person_id,
-            image_path=str(image_path)
-        )
-
-        return result
-    
-    except Exception as e:
-        raise_api_error(e)
-    
-    finally:
-        if image_path and image_path.exists():
-            image_path.unlink()
-    
-@app.post("/verify")
-def verify_face(
-    image: UploadFile = File(...),
-    threshold: float = Form(0.70),
-    authenticated: bool = Depends(verify_api_key)
-):
-    image_path = None
-
-    try:
-        image_path = save_upload_file(image)
-
-        result = engine.verify_face(
-            image_path=str(image_path),
-            threshold=threshold
-        )
-
-        return result
-    
-    except Exception as e:
-        raise_api_error(e)
-    
-    finally:
-        if image_path and image_path.exists():
-            image_path.unlink()
-    
-@app.get("/people")
-def list_people(
-    authenticated: bool = Depends(verify_api_key)
-):
-    return engine.list_people()
-
-@app.delete("/people/{person_id}")
-def delete_person(
-    person_id: str,
-    authenticated: bool = Depends(verify_api_key)
-):
-    result = engine.delete_person(person_id)
-
-    if not result["deleted"]:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error_code": "PERSON_NOT_FOUND",
-                "message": result["message"]
-            }
-        )
-    
-    return result
