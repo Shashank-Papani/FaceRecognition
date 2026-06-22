@@ -307,6 +307,78 @@ def delete_faces(
         "deletedFaces": result["deletedFaces"]
     }
 
+@app.post("/collections/{collection_id}/search")
+def search_faces_by_image(
+    collection_id: str,
+    image: UploadFile = File(...),
+    faceMatchThreshold: float = Form(80.0),
+    maxFaces: int = Form(1),
+    authenticated: bool = Depends(verify_api_key)
+):
+    image_path = None
+
+    try:
+        image_path = save_upload_file(image)
+
+        result = engine.search_faces_by_image(
+            collection_id=collection_id,
+            image_path=str(image_path),
+            face_match_threshold=faceMatchThreshold,
+            max_faces=maxFaces
+        )
+
+        if not result.get("success"):
+            status_code = (
+                404
+                if result["error_code"] == "ResourceNotFoundException"
+                else 400
+            )
+
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "success": False,
+                    "error_code": result["error_code"],
+                    "message": result["message"]
+                }
+            )
+        
+        return {
+            "faceMatches": result["faceMatches"],
+            "searchedFaceBoundingBox": result[
+                "searchedFaceBoundingBox"
+            ],
+            "searchedFaceConfidence": result[
+                "searchedFaceConfidence"
+            ],
+            "faceModelVersion": result["faceModelVersion"]
+        }
+    
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise_api_error(e)
+
+    finally:
+        if image_path and image_path.exists():
+            image_path.unlink()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @app.post("/enroll")
 def enroll_face(
     person_id: str = Form(...),

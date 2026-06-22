@@ -434,6 +434,116 @@ def delete_faces(
         "deletedFaces": [row["face_id"] for row in deleted_rows]
     }
 
+def search_faces_by_embedding(
+    collection_id: str,
+    query_embedding: list[float],
+    face_match_threshold: float = 80.0,
+    max_faces: int = 1
+):
+    if face_match_threshold < 0 or face_match_threshold > 100:
+        return {
+            "success": False,
+            "error_code": "InvalidParameterException",
+            "message": "faceMatchThreshold must be between 0 and 100"
+        }
+    
+    if max_faces < 1 or max_faces > 4096:
+        return {
+            "success": False,
+            "error_code": "InvalidParameterException",
+            "message": "maxFaces must be between 1 and 4096"
+        }
+    
+    embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+    with SessionLocal() as db:
+        collection_row = db.execute(
+            text("""
+                SELECT face_model_version
+                FROM face_collections
+                WHERE collection_id = :collection_id
+            """),
+            {"collection_id": collection_id}
+        ).mappings().first()
+
+        if not collection_row:
+                return {
+                    "success": False,
+                    "error_code": "ResourceNotFoundException",
+                    "message": "Collection does not exist"
+                }
+        
+        result = db.execute(
+            text("""
+                SELECT
+                    CAST(face_id AS TEXT) AS face_id,
+                    CAST(image_id AS TEXT) AS image_id,
+                    external_image_id,
+                    confidence,
+                    bounding_box,
+                    (
+                        1 - (
+                            embedding <=>
+                            CAST(:query_embedding AS vector)
+                        )
+                    ) * 100 AS similarity
+                FROM face_embeddings
+                WHERE collection_id = :collection_id
+                  AND face_id IS NOT NULL
+                  AND image_id IS NOT NULL
+                  AND (
+                        1 - (
+                            embedding <=>
+                            CAST(:query_embedding AS vector)
+                        )
+                      ) * 100 >= :face_match_threshold
+                ORDER BY
+                    embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :max_faces
+            """),
+            {
+                "collection_id": collection_id,
+                "query_embedding": embedding_str,
+                "face_match_threshold": face_match_threshold,
+                "max_faces": max_faces
+            }
+        )
+
+        rows = result.mappings().all()
+
+    face_matches = []
+
+    for row in rows:
+        similarity = float(row["similarity"])
+        similarity = max(0.0, min(100.0, similarity))
+
+        face_matches.append({
+            "face": {
+                "faceId": row["face_id"],
+                "imageId": row["image_id"],
+                "externalImageId": row["external_image_id"],
+                "confidence": row["confidence"],
+                "boundingBox": row["bounding_box"]
+            },
+            "similarity": round(similarity, 2)
+        })
+
+    return {
+        "success": True,
+        "faceMatches": face_matches,
+        "faceModelVersion": collection_row["face_model_version"]
+    }
+
+
+
+
+
+
+
+
+
+
+
 def create_person_if_not_exists(person_id: str):
     with SessionLocal() as db:
         db.execute(

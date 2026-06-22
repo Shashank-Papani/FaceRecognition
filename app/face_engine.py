@@ -11,7 +11,8 @@ from app.face_repository import (
     log_verification,
     find_best_match,
     collection_exists,
-    save_indexed_face
+    save_indexed_face,
+    search_faces_by_embedding
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -120,10 +121,10 @@ class FaceEngine:
         confidence = float(face[-1])
 
         bounding_box = {
-            "Width": float(face_w / original_w),
-            "Height": float(face_h / original_h),
-            "Left": float(x / original_w),
-            "Top": float(y / original_h)
+            "width": float(face_w / original_w),
+            "height": float(face_h / original_h),
+            "left": float(x / original_w),
+            "top": float(y / original_h)
         }
 
         self.last_face_quality = {
@@ -201,6 +202,45 @@ class FaceEngine:
                 }
             ],
             "faceModelVersion": EMBEDDING_MODEL_VERSION
+        }
+    
+    def search_faces_by_image(
+        self,
+        collection_id: str,
+        image_path: str,
+        face_match_threshold: float = 80.0,
+        max_faces: int = 1
+    ):
+        if not collection_exists(collection_id):
+            return {
+                "success": False,
+                "error_code": "ResourceNotFoundException",
+                "message": "Collection does not exist"
+            }
+        
+        embedding = self.get_embedding(image_path)
+
+        searched_face_bounding_box = self.last_face_quality["bounding_box"]
+        searched_face_confidence = self.last_face_quality[
+            "face_confidence_percent"
+        ]
+
+        result = search_faces_by_embedding(
+            collection_id=collection_id,
+            query_embedding=embedding.tolist(),
+            face_match_threshold=face_match_threshold,
+            max_faces=max_faces
+        )
+
+        if not result.get("success"):
+            return result
+
+        return {
+            "success": True,
+            "faceMatches": result["faceMatches"],
+            "searchedFaceBoundingBox": searched_face_bounding_box,
+            "searchedFaceConfidence": searched_face_confidence,
+            "faceModelVersion": result["faceModelVersion"]
         }
 
     def compare_faces(self, image_path_1: str, image_path_2: str):
