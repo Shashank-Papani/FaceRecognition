@@ -1,6 +1,5 @@
 from app.main import engine, repo
 
-
 def fake_image(
     filename: str = "face.jpg",
     content_type: str = "image/jpeg",
@@ -12,7 +11,6 @@ def fake_image(
             content_type,
         )
     }
-
 
 def test_index_face_success(client, monkeypatch):
     monkeypatch.setattr(

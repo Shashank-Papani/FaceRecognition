@@ -1,6 +1,7 @@
 import time
 import logging
 import shutil
+import json
 from pathlib import Path
 from pydantic import BaseModel
 from app.face_engine import FaceEngine
@@ -8,6 +9,8 @@ from app.auth import verify_api_key
 from uuid import uuid4
 from app.errors import raise_api_error
 from app import face_repository as repo
+from app.text_engine import TextEngine
+from functools import lru_cache
 
 from fastapi import (
     FastAPI,
@@ -73,6 +76,10 @@ async def log_requests(request: Request, call_next):
     return response
 
 engine = FaceEngine()
+
+@lru_cache(maxsize=1) 
+def get_text_engine() -> TextEngine: 
+    return TextEngine()
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -172,6 +179,139 @@ def detect_faces(
         if image_path and image_path.exists():
             image_path.unlink()
             
+@app.post("/text/detect")
+def detect_text(
+    image: UploadFile = File(...),
+    filters: str | None = Form(None),
+    authenticated: bool = Depends(verify_api_key),
+    ocr_engine: TextEngine = Depends(get_text_engine),
+):
+    image_path = None
+
+    try:
+        min_confidence = 0.0
+        regions_of_interest = []
+
+        if filters:
+            try:
+                filter_data = json.loads(
+                    filters
+                )
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_code": (
+                            "InvalidParameterException"
+                        ),
+                        "message": (
+                            "filters must be valid JSON."
+                        ),
+                    },
+                )
+
+            if not isinstance(
+                filter_data,
+                dict,
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_code": (
+                            "InvalidParameterException"
+                        ),
+                        "message": (
+                            "filters must be "
+                            "a JSON object."
+                        ),
+                    },
+                )
+
+            min_confidence = filter_data.get(
+                "minConfidence",
+                0.0,
+            )
+
+            regions_of_interest = (
+                filter_data.get(
+                    "regionsOfInterest",
+                    [],
+                )
+            )
+
+            try:
+                min_confidence = float(
+                    min_confidence
+                )
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_code": (
+                            "InvalidParameterException"
+                        ),
+                        "message": (
+                            "minConfidence "
+                            "must be a number."
+                        ),
+                    },
+                )
+
+        image_path = save_upload_file(
+            image
+        )
+
+        return ocr_engine.detect_text(
+            image_path=str(image_path),
+            min_confidence=min_confidence,
+            regions_of_interest=regions_of_interest,
+        )
+
+    except HTTPException:
+        raise
+
+    except ValueError as error:
+        message = str(error)
+
+        if message.startswith(
+            "InvalidImageFormatException"
+        ):
+            error_code = (
+                "InvalidImageFormatException"
+            )
+        else:
+            error_code = (
+                "InvalidParameterException"
+            )
+
+        clean_message = (
+            message.split(":", 1)[1].strip()
+            if ":" in message
+            else message
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": error_code,
+                "message": clean_message,
+            },
+        )
+
+    except Exception as error:
+        raise_api_error(error)
+
+    finally:
+        if (
+            image_path
+            and image_path.exists()
+        ):
+            image_path.unlink()
+
 @app.post("/collections")
 def create_collection(
     request: CreateCollectionRequest,
