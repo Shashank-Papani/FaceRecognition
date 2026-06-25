@@ -347,3 +347,37 @@ def test_geometry_matches_region_using_center_point():
         geometry,
         non_matching_region,
     ) is False
+
+def test_detect_text_rejects_image_larger_than_15_mb(
+    client_and_engine,
+):
+    client, fake_engine = client_and_engine
+
+    oversized_image = (
+        b"x" * (15 * 1024 * 1024 + 1)
+    )
+
+    response = client.post(
+        "/text/detect",
+        files={
+            "image": (
+                "large-image.jpg",
+                oversized_image,
+                "image/jpeg",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+
+    detail = response.json()["detail"]
+
+    assert detail["error_code"] == (
+        "IMAGE_TOO_LARGE"
+    )
+
+    assert detail["message"] == (
+        "Image size cannot exceed 15 MB."
+    )
+
+    assert fake_engine.calls == []

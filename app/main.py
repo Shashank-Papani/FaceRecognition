@@ -84,7 +84,13 @@ def get_text_engine() -> TextEngine:
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-def save_upload_file(image: UploadFile) -> Path:
+MAX_TEXT_IMAGE_SIZE_BYTES = 15 * 1024 * 1024
+UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+
+def save_upload_file(
+    image: UploadFile,
+    max_size_bytes: int | None = None,
+) -> Path:
     filename = image.filename or ""
     file_extension = Path(filename).suffix.lower()
 
@@ -95,17 +101,43 @@ def save_upload_file(image: UploadFile) -> Path:
         )
 
     image_path = UPLOAD_DIR / f"{uuid4()}{file_extension}"
+    bytes_written = 0
 
     image.file.seek(0)
 
-    with image_path.open("wb") as buffer:
-        shutil.copyfileobj(image.file, buffer)
+    try:
+        with image_path.open("wb") as buffer:
+            while True:
+                chunk = image.file.read(
+                    UPLOAD_CHUNK_SIZE_BYTES
+                )
 
-    if image_path.stat().st_size == 0:
+                if not chunk:
+                    break
+
+                bytes_written += len(chunk)
+
+                if (
+                    max_size_bytes is not None
+                    and bytes_written > max_size_bytes
+                ):
+                    raise ValueError(
+                        "ImageTooLargeException: "
+                        "Image size cannot exceed 15 MB."
+                    )
+
+                buffer.write(chunk)
+
+    except Exception:
+        image_path.unlink(missing_ok=True)
+        raise
+
+    if bytes_written == 0:
         image_path.unlink(missing_ok=True)
 
         raise ValueError(
-            "InvalidParameterException: Uploaded image is empty."
+            "InvalidParameterException: "
+            "Uploaded image is empty."
         )
 
     return image_path
@@ -261,7 +293,8 @@ def detect_text(
                 )
 
         image_path = save_upload_file(
-            image
+            image,
+            max_size_bytes = MAX_TEXT_IMAGE_SIZE_BYTES,
         )
 
         return ocr_engine.detect_text(
@@ -282,6 +315,10 @@ def detect_text(
             error_code = (
                 "InvalidImageFormatException"
             )
+        elif message.startswith(
+            "ImageTooLargeException"
+        ):
+            error_code = "IMAGE_TOO_LARGE"
         else:
             error_code = (
                 "InvalidParameterException"
