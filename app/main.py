@@ -315,14 +315,17 @@ def detect_text(
             error_code = (
                 "InvalidImageFormatException"
             )
+            status_code = 415
         elif message.startswith(
             "ImageTooLargeException"
         ):
             error_code = "IMAGE_TOO_LARGE"
+            status_code = 413
         else:
             error_code = (
                 "InvalidParameterException"
             )
+            status_code = 400
 
         clean_message = (
             message.split(":", 1)[1].strip()
@@ -331,7 +334,7 @@ def detect_text(
         )
 
         raise HTTPException(
-            status_code=400,
+            status_code = status_code,
             detail={
                 "success": False,
                 "error_code": error_code,

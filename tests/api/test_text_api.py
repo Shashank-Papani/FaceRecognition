@@ -8,6 +8,17 @@ from app.auth import verify_api_key
 from app.main import app, get_text_engine
 from app.text_engine import TextEngine
 
+class FakeCorruptedImageEngine:
+    def detect_text(
+        self,
+        image_path: str,
+        min_confidence: float = 0.0,
+        regions_of_interest: list[dict] | None = None,
+    ) -> dict:
+        raise ValueError(
+            "InvalidImageFormatException: "
+            "The uploaded image could not be decoded."
+        )
 
 class FakeTextEngine:
     def __init__(self):
@@ -368,7 +379,7 @@ def test_detect_text_rejects_image_larger_than_15_mb(
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 413
 
     detail = response.json()["detail"]
 
@@ -381,3 +392,80 @@ def test_detect_text_rejects_image_larger_than_15_mb(
     )
 
     assert fake_engine.calls == []
+
+def test_detect_text_rejects_unsupported_image_extension(
+    client_and_engine,
+):
+    client, fake_engine = client_and_engine
+
+    response = client.post(
+        "/text/detect",
+        files={
+            "image": (
+                "document.pdf",
+                b"fake-pdf-content",
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 415
+
+    detail = response.json()["detail"]
+
+    assert detail["error_code"] == (
+        "InvalidImageFormatException"
+    )
+
+    assert detail["message"] == (
+        "Only JPG, JPEG, and PNG images are supported."
+    )
+
+    assert fake_engine.calls == []
+
+def test_detect_text_maps_corrupted_image_to_415():
+    fake_engine = FakeCorruptedImageEngine()
+
+    app.dependency_overrides[
+        get_text_engine
+    ] = lambda: fake_engine
+
+    app.dependency_overrides[
+        verify_api_key
+    ] = lambda: True
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/text/detect",
+                files={
+                    "image": (
+                        "corrupted.jpg",
+                        b"not-a-real-image",
+                        "image/jpeg",
+                    )
+                },
+            )
+
+        assert response.status_code == 415
+
+        detail = response.json()["detail"]
+
+        assert detail["error_code"] == (
+            "InvalidImageFormatException"
+        )
+
+        assert detail["message"] == (
+            "The uploaded image could not be decoded."
+        )
+
+    finally:
+        app.dependency_overrides.pop(
+            get_text_engine,
+            None,
+        )
+
+        app.dependency_overrides.pop(
+            verify_api_key,
+            None,
+        )
