@@ -14,6 +14,8 @@ class FakeCorruptedImageEngine:
         image_path: str,
         min_confidence: float = 0.0,
         regions_of_interest: list[dict] | None = None,
+        min_bounding_box_width: float = 0.0,
+        min_bounding_box_height: float = 0.0,
     ) -> dict:
         raise ValueError(
             "InvalidImageFormatException: "
@@ -30,6 +32,8 @@ class FakeTextEngine:
         image_path: str,
         min_confidence: float = 0.0,
         regions_of_interest: list[dict] | None = None,
+        min_bounding_box_width: float = 0.0,
+        min_bounding_box_height: float = 0.0,
     ) -> dict:
         image = Path(image_path)
 
@@ -40,6 +44,8 @@ class FakeTextEngine:
                 "image_path": image_path,
                 "min_confidence": min_confidence,
                 "regions_of_interest": regions_of_interest,
+                "min_bounding_box_width": min_bounding_box_width,
+                "min_bounding_box_height": min_bounding_box_height,
             }
         )
 
@@ -160,6 +166,8 @@ def test_detect_text_uses_default_filters(
 
     assert call["min_confidence"] == 0.0
     assert call["regions_of_interest"] == []
+    assert call["min_bounding_box_width"] == 0.0
+    assert call["min_bounding_box_height"] == 0.0
 
 
 def test_detect_text_passes_confidence_and_region(
@@ -179,6 +187,8 @@ def test_detect_text_passes_confidence_and_region(
     filters = {
         "minConfidence": 50,
         "regionsOfInterest": [region],
+        "minBoundingBoxWidth": 0.02,
+        "minBoundingBoxHeight": 0.03,
     }
 
     response = client.post(
@@ -195,6 +205,8 @@ def test_detect_text_passes_confidence_and_region(
 
     assert call["min_confidence"] == 50.0
     assert call["regions_of_interest"] == [region]
+    assert call["min_bounding_box_width"] == 0.02
+    assert call["min_bounding_box_height"] == 0.03
 
 
 def test_detect_text_deletes_temporary_upload(
@@ -469,3 +481,66 @@ def test_detect_text_maps_corrupted_image_to_415():
             verify_api_key,
             None,
         )
+
+def test_detect_text_rejects_non_numeric_min_bounding_box_width(
+    client_and_engine,
+):
+    client, fake_engine = client_and_engine
+
+    response = client.post(
+        "/text/detect",
+        files=upload_image(),
+        data={
+            "filters": json.dumps(
+                {
+                    "minBoundingBoxWidth": "wide"
+                }
+            )
+        },
+    )
+
+    assert response.status_code == 400
+
+    detail = response.json()["detail"]
+
+    assert detail["error_code"] == (
+        "InvalidParameterException"
+    )
+
+    assert detail["message"] == (
+        "minBoundingBoxWidth must be a number."
+    )
+
+    assert fake_engine.calls == []
+
+
+def test_detect_text_rejects_non_numeric_min_bounding_box_height(
+    client_and_engine,
+):
+    client, fake_engine = client_and_engine
+
+    response = client.post(
+        "/text/detect",
+        files=upload_image(),
+        data={
+            "filters": json.dumps(
+                {
+                    "minBoundingBoxHeight": "tall"
+                }
+            )
+        },
+    )
+
+    assert response.status_code == 400
+
+    detail = response.json()["detail"]
+
+    assert detail["error_code"] == (
+        "InvalidParameterException"
+    )
+
+    assert detail["message"] == (
+        "minBoundingBoxHeight must be a number."
+    )
+
+    assert fake_engine.calls == []

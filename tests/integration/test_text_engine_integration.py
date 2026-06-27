@@ -27,6 +27,8 @@ def test_paddleocr_detects_odometer_reading():
     result = engine.detect_text(
         image_path=str(ODOMETER_IMAGE),
         min_confidence=50.0,
+        min_bounding_box_width=0.02,
+        min_bounding_box_height=0.02,
         regions_of_interest=[
             {
                 "boundingBox": {

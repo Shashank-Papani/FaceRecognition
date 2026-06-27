@@ -223,6 +223,8 @@ def detect_text(
     try:
         min_confidence = 0.0
         regions_of_interest = []
+        min_bounding_box_width = 0.0
+        min_bounding_box_height = 0.0
 
         if filters:
             try:
@@ -273,6 +275,16 @@ def detect_text(
                 )
             )
 
+            min_bounding_box_width = filter_data.get(
+                "minBoundingBoxWidth",
+                0.0,
+            )
+
+            min_bounding_box_height = filter_data.get(
+                "minBoundingBoxHeight",
+                0.0,
+            )
+
             try:
                 min_confidence = float(
                     min_confidence
@@ -291,6 +303,42 @@ def detect_text(
                         ),
                     },
                 )
+            
+            try:
+                min_bounding_box_width = float(
+                    min_bounding_box_width
+                )
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_code": (
+                            "InvalidParameterException"
+                        ),
+                        "message": (
+                            "minBoundingBoxWidth must be a number."
+                        ),
+                    },
+                )
+
+            try:
+                min_bounding_box_height = float(
+                    min_bounding_box_height
+                )
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_code": (
+                            "InvalidParameterException"
+                        ),
+                        "message": (
+                            "minBoundingBoxHeight must be a number."
+                        ),
+                    },
+                )
 
         image_path = save_upload_file(
             image,
@@ -301,6 +349,8 @@ def detect_text(
             image_path=str(image_path),
             min_confidence=min_confidence,
             regions_of_interest=regions_of_interest,
+            min_bounding_box_width=min_bounding_box_width,
+            min_bounding_box_height=min_bounding_box_height,
         )
 
     except HTTPException:

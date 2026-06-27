@@ -236,12 +236,26 @@ class TextEngine:
         image_path: str,
         min_confidence: float = 0.0,
         regions_of_interest: list[dict] | None = None,
+        min_bounding_box_width: float = 0.0,
+        min_bounding_box_height: float = 0.0,
     ) -> dict:
         if not 0.0 <= min_confidence <= 100.0:
             raise ValueError(
                 "InvalidParameterException: "
                 "minConfidence must be between "
                 "0 and 100."
+            )
+        
+        if not 0.0 <= min_bounding_box_width <= 1.0:
+            raise ValueError(
+                "InvalidParameterException: "
+                "minBoundingBoxWidth must be between 0 and 1."
+            )
+
+        if not 0.0 <= min_bounding_box_height <= 1.0:
+            raise ValueError(
+                "InvalidParameterException: "
+                "minBoundingBoxHeight must be between 0 and 1."
             )
 
         regions = (
@@ -346,6 +360,14 @@ class TextEngine:
                     geometry=line_geometry,
                     regions=regions,
                 ):
+                    continue
+
+                line_box = line_geometry["boundingBox"]
+
+                if line_box["width"] < min_bounding_box_width:
+                    continue
+
+                if line_box["height"] < min_bounding_box_height:
                     continue
 
                 line_id = next_id
