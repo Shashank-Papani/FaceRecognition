@@ -59,3 +59,16 @@ ON face_embeddings (face_id);
 
 CREATE INDEX IF NOT EXISTS face_embeddings_external_image_id_idx
 ON face_embeddings (external_image_id);
+
+CREATE TABLE IF NOT EXISTS liveness_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    session_id TEXT UNIQUE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'CREATED',
+    confidence FLOAT,
+    threshold FLOAT,
+    live BOOLEAN,
+    model_version TEXT,
+    face_quality JSONB,
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now()
+);

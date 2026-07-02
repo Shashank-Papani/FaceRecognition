@@ -11,6 +11,10 @@ from app.errors import raise_api_error
 from app import face_repository as repo
 from app.text_engine import TextEngine
 from functools import lru_cache
+from app.liveness_engine import LivenessEngine
+from app.liveness_repository import LivenessRepository
+from app import face_repository as repo
+from sqlalchemy.orm import Session
 
 from fastapi import (
     FastAPI,
@@ -76,10 +80,22 @@ async def log_requests(request: Request, call_next):
     return response
 
 engine = FaceEngine()
+liveness_repo = LivenessRepository()
+def get_db():
+    db = repo.SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
 
 @lru_cache(maxsize=1) 
 def get_text_engine() -> TextEngine: 
     return TextEngine()
+
+@lru_cache(maxsize=1)
+def get_liveness_engine() -> LivenessEngine:
+    return LivenessEngine()
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -641,4 +657,126 @@ def search_faces_by_image(
     finally:
         if image_path and image_path.exists():
             image_path.unlink()
+
+@app.post("/liveness/sessions")
+def create_liveness_session(
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key),
+):
+    session = liveness_repo.create_session(db)
+
+    return {
+        "sessionId": session["session_id"],
+        "status": session["status"],
+        "createdAt": session["created_at"],
+    }
+
+@app.post("/liveness/sessions/{session_id}/frames")
+def upload_liveness_frame(
+    session_id: str,
+    image: UploadFile = File(...),
+    threshold: float = Form(80.0),
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key),
+    liveness_engine: LivenessEngine = Depends(
+        get_liveness_engine
+    ),
+):
+    existing_session = liveness_repo.get_session(
+        db=db,
+        session_id=session_id,
+    )
+
+    if existing_session is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "error_code": "ResourceNotFoundException",
+                "message": "Liveness session not found.",
+            },
+        )
+    
+    image_path = None
+
+    try:
+        image_path = save_upload_file(image)
+
+        result = liveness_engine.check_liveness(
+            image_path=str(image_path),
+            threshold=float(threshold),
+        )
+
+        saved_result = liveness_repo.save_result(
+            db=db,
+            session_id=session_id,
+            result=result,
+        )
+
+        return {
+            "sessionId": saved_result["session_id"],
+            "status": saved_result["status"],
+            "live": saved_result["live"],
+            "confidence": saved_result["confidence"],
+            "threshold": saved_result["threshold"],
+            "modelVersion": saved_result["model_version"],
+            "faceQuality": saved_result["face_quality"],
+        }
+    
+    except ValueError as exc:
+        message = str(exc)
+
+        if ":" in message:
+            error_code, clean_message = message.split(":", 1)
+            error_code = error_code.strip()
+            clean_message = clean_message.strip()
+        else:
+            error_code = "InvalidParameterException"
+            clean_message = message
+
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": error_code,
+                "message": clean_message,
+            },
+        )
+    
+    finally:
+        if image_path is not None:
+            image_path.unlink(missing_ok=True)
+
+@app.get("/liveness/sessions/{session_id}/results")
+def get_liveness_session_results(
+    session_id: str,
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key),
+):
+    session = liveness_repo.get_session(
+        db=db,
+        session_id=session_id,
+    )
+           
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "error_code": "ResourceNotFoundException",
+                "message": "Liveness session not found.",
+            },
+        )
+    
+    return {
+        "sessionId": session["session_id"],
+        "status": session["status"],
+        "live": session["live"],
+        "confidence": session["confidence"],
+        "threshold": session["threshold"],
+        "modelVersion": session["model_version"],
+        "faceQuality": session["face_quality"],
+        "createdAt": session["created_at"],
+        "updatedAt": session["updated_at"],
+    }
 
