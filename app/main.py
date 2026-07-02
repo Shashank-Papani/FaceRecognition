@@ -743,6 +743,9 @@ def upload_liveness_frame(
             },
         )
     
+    except Exception as error:
+        raise_api_error(error)
+    
     finally:
         if image_path is not None:
             image_path.unlink(missing_ok=True)

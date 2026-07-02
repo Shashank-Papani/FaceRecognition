@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -111,7 +112,9 @@ class LivenessRepository:
                 "threshold": result["threshold"],
                 "live": result["live"],
                 "model_version": result["modelVersion"],
-                "face_quality": result["faceQuality"],
+                "face_quality": json.dumps(
+                    result["faceQuality"]
+                ),
                 "updated_at": datetime.utcnow(),
             },
         ).mappings().one()
