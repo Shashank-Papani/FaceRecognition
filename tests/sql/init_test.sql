@@ -52,3 +52,31 @@ CREATE TABLE IF NOT EXISTS liveness_sessions (
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now()
 );
+
+ALTER TABLE liveness_sessions
+    ADD COLUMN IF NOT EXISTS challenge_type TEXT
+        NOT NULL DEFAULT 'BLINK_AND_TURN',
+
+    ADD COLUMN IF NOT EXISTS challenge_direction TEXT
+        NOT NULL DEFAULT 'EITHER',
+
+    ADD COLUMN IF NOT EXISTS challenge_stage TEXT
+        NOT NULL DEFAULT 'WAITING_FOR_OPEN_EYES',
+
+    ADD COLUMN IF NOT EXISTS challenge_progress INTEGER
+        NOT NULL DEFAULT 0,
+
+    ADD COLUMN IF NOT EXISTS challenge_instruction TEXT
+        NOT NULL DEFAULT 'Look at the camera with your eyes open',
+
+    ADD COLUMN IF NOT EXISTS active_liveness_passed BOOLEAN,
+
+    ADD COLUMN IF NOT EXISTS challenge_started_at TIMESTAMP
+        NOT NULL DEFAULT now(),
+
+    ADD COLUMN IF NOT EXISTS challenge_expires_at TIMESTAMP
+        NOT NULL DEFAULT (now() + INTERVAL '30 seconds'),
+
+    ADD COLUMN IF NOT EXISTS last_active_signal JSONB,
+
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;

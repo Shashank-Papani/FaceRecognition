@@ -2,52 +2,34 @@ services:
   db:
     image: pgvector/pgvector:pg17
     container_name: face-postgres-db
-
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: face_recognition
-
     ports:
       - "5433:5432"
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
-
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U postgres -d face_recognition",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
   api:
     platform: linux/amd64
 
     build:
-      context: .
-      dockerfile: Dockerfile
-
+    	context: .
+	dockerfile: Dockerfile
+ 
     container_name: face-recognition-api
-
     ports:
       - "8080:8000"
-
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/face_recognition
-      API_KEY: ${API_KEY}
-
+      API_KEY: dev-secret-key20
     depends_on:
-      db:
-        condition: service_healthy
-
+      - db
     volumes:
       - ./uploads:/app/uploads
       - ./models:/app/models
-
+	
 volumes:
   postgres_data:

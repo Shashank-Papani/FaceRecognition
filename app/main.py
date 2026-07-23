@@ -1,6 +1,5 @@
 import time
 import logging
-import shutil
 import json
 from pathlib import Path
 from pydantic import BaseModel
@@ -11,10 +10,12 @@ from app.errors import raise_api_error
 from app import face_repository as repo
 from app.text_engine import TextEngine
 from functools import lru_cache
-from app.liveness_engine import LivenessEngine
 from app.liveness_repository import LivenessRepository
-from app import face_repository as repo
 from sqlalchemy.orm import Session
+from app.liveness_service import LivenessService
+
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from fastapi import (
     FastAPI,
@@ -35,6 +36,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Face Recognition API")
+
+app.mount(
+    "/static",
+    StaticFiles(directory="app/static"),
+    name="static",
+)
 
 class CreateCollectionRequest(BaseModel):
     collectionId: str
@@ -94,8 +101,10 @@ def get_text_engine() -> TextEngine:
     return TextEngine()
 
 @lru_cache(maxsize=1)
-def get_liveness_engine() -> LivenessEngine:
-    return LivenessEngine()
+def get_liveness_service() -> LivenessService:
+    return LivenessService(
+        repository=liveness_repo
+    )
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -157,6 +166,16 @@ def save_upload_file(
         )
 
     return image_path
+
+
+@app.get(
+    "/liveness-demo",
+    include_in_schema=False,
+)
+def liveness_demo():
+    return FileResponse(
+        "app/static/liveness.html"
+    )
 
 @app.get("/")
 def home():
@@ -668,6 +687,24 @@ def create_liveness_session(
     return {
         "sessionId": session["session_id"],
         "status": session["status"],
+        "challengeType": session[
+            "challenge_type"
+        ],
+        "challengeDirection": session[
+            "challenge_direction"
+        ],
+        "challengeStage": session[
+            "challenge_stage"
+        ],
+        "challengeProgress": session[
+            "challenge_progress"
+        ],
+        "instruction": session[
+            "challenge_instruction"
+        ],
+        "expiresAt": session[
+            "challenge_expires_at"
+        ],
         "createdAt": session["created_at"],
     }
 
@@ -675,42 +712,30 @@ def create_liveness_session(
 def upload_liveness_frame(
     session_id: str,
     image: UploadFile = File(...),
-    threshold: float = Form(80.0),
+    threshold: float = Form(
+        80.0,
+        ge=0.0,
+        le=100.0,
+    ),
     db: Session = Depends(get_db),
     authenticated: bool = Depends(verify_api_key),
-    liveness_engine: LivenessEngine = Depends(
-        get_liveness_engine
+    liveness_service: LivenessService = Depends(
+        get_liveness_service
     ),
 ):
-    existing_session = liveness_repo.get_session(
-        db=db,
-        session_id=session_id,
-    )
-
-    if existing_session is None:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error_code": "ResourceNotFoundException",
-                "message": "Liveness session not found.",
-            },
-        )
     
     image_path = None
 
     try:
         image_path = save_upload_file(image)
 
-        result = liveness_engine.check_liveness(
-            image_path=str(image_path),
-            threshold=float(threshold),
-        )
-
-        saved_result = liveness_repo.save_result(
-            db=db,
-            session_id=session_id,
-            result=result,
+        saved_result = (
+            liveness_service.process_frame(
+                db=db,
+                session_id=session_id,
+                image_path=str(image_path),
+                threshold=float(threshold),
+            )
         )
 
         return {
@@ -719,30 +744,75 @@ def upload_liveness_frame(
             "live": saved_result["live"],
             "confidence": saved_result["confidence"],
             "threshold": saved_result["threshold"],
-            "modelVersion": saved_result["model_version"],
-            "faceQuality": saved_result["face_quality"],
+            "modelVersion": saved_result[
+                "model_version"
+            ],
+            "faceQuality": saved_result[
+                "face_quality"
+            ],
+            "activeLivenessPassed": saved_result[
+                "active_liveness_passed"
+            ],
+            "challengeStage": saved_result[
+                "challenge_stage"
+            ],
+            "challengeProgress": saved_result[
+                "challenge_progress"
+            ],
+            "instruction": saved_result[
+                "challenge_instruction"
+            ],
+            "challengeDirection": saved_result[
+                "challenge_direction"
+            ],
+            "signal": saved_result[
+                "last_active_signal"
+            ],
+            "expiresAt": saved_result[
+                "challenge_expires_at"
+            ],
         }
+
+    except HTTPException:
+        raise
     
     except ValueError as exc:
         message = str(exc)
 
         if ":" in message:
-            error_code, clean_message = message.split(":", 1)
+            error_code, clean_message = message.split(
+                ":",
+                1,
+            )
+
             error_code = error_code.strip()
             clean_message = clean_message.strip()
         else:
-            error_code = "InvalidParameterException"
+            error_code = ("InvalidParameterException")
             clean_message = message
 
+        status_codes = {
+            "ResourceNotFoundException": 404,
+            "SESSION_NOT_ACTIVE": 409,
+            "NO_FACE_DETECTED": 400,
+            "MULTIPLE_FACES_DETECTED": 400,
+            "LOW_QUALITY_FACE": 400,
+            "InvalidImageFormatException": 415,
+            "InvalidParameterException": 400,
+        }
+
         raise HTTPException(
-            status_code=400,
+            status_code=status_codes.get(
+                error_code,
+                400,
+            ),
             detail={
                 "success": False,
                 "error_code": error_code,
                 "message": clean_message,
             },
         )
-    
+        
     except Exception as error:
         raise_api_error(error)
     
@@ -781,5 +851,32 @@ def get_liveness_session_results(
         "faceQuality": session["face_quality"],
         "createdAt": session["created_at"],
         "updatedAt": session["updated_at"],
+        "activeLivenessPassed": session[
+            "active_liveness_passed"
+        ],
+        "challengeType": session[
+            "challenge_type"
+        ],
+        "challengeDirection": session[
+            "challenge_direction"
+        ],
+        "challengeStage": session[
+            "challenge_stage"
+        ],
+        "challengeProgress": session[
+            "challenge_progress"
+        ],
+        "instruction": session[
+            "challenge_instruction"
+        ],
+        "signal": session[
+            "last_active_signal"
+        ],
+        "expiresAt": session[
+            "challenge_expires_at"
+        ],
+        "completedAt": session[
+            "completed_at"
+        ],
     }
 

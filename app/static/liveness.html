@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Active Liveness Check</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/liveness.css"
+    >
+</head>
+
+<body>
+    <main class="container">
+        <h1>Active Liveness Check</h1>
+
+        <p class="subtitle">
+            Complete the camera-guided blink and head-turn challenge.
+        </p>
+
+        <section class="camera-card">
+            <video
+                id="camera"
+                autoplay
+                playsinline
+                muted
+            ></video>
+
+            <canvas
+                id="frameCanvas"
+                hidden
+            ></canvas>
+
+            <div
+                id="cameraPlaceholder"
+                class="camera-placeholder"
+            >
+                Camera has not started
+            </div>
+        </section>
+
+        <section class="status-card">
+            <p id="status">
+                Ready to begin
+            </p>
+
+            <h2 id="instruction">
+                Press Start Liveness Check
+            </h2>
+
+            <progress
+                id="progress"
+                value="0"
+                max="100"
+            ></progress>
+
+            <p id="progressText">
+                0%
+            </p>
+        </section>
+
+        <section class="controls">
+            <label for="apiKey">
+                Development API key
+            </label>
+
+            <input
+                id="apiKey"
+                type="password"
+                autocomplete="off"
+                placeholder="Enter API key"
+            >
+
+            <button
+                id="startButton"
+                type="button"
+            >
+                Start Liveness Check
+            </button>
+
+            <button
+                id="stopButton"
+                type="button"
+                disabled
+            >
+                Stop
+            </button>
+        </section>
+
+        <p
+            id="errorMessage"
+            class="error-message"
+        ></p>
+    </main>
+
+    <script src="/static/liveness.js"></script>
+</body>
+</html>
